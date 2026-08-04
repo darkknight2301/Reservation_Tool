@@ -1,0 +1,18 @@
+[Unit]
+Description=Reservation Management System (Gunicorn/Uvicorn)
+After=network.target
+
+[Service]
+Type=notify
+User=reservation-system
+Group=reservation-system
+WorkingDirectory=/opt/reservation-system
+EnvironmentFile=/etc/reservation-system/.env
+RuntimeDirectory=reservation-system
+ExecStart=/opt/reservation-system/venv/bin/gunicorn -c /opt/reservation-system/deploy/gunicorn_conf.py app.main:app
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
