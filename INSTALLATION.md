@@ -2,7 +2,7 @@
 
 ## Table of Contents
 1. [Python Setup](#python-setup)
-2. [Linux Deployment](#linux-deployment)
+2. [Linux Deployment (LAN-Only)](#linux-deployment-lan-only)
 3. [Environment Variables](#environment-variables)
 4. [Database](#database)
 5. [Alembic Migrations](#alembic-migrations)
@@ -34,12 +34,23 @@ python -c "import fastapi, sqlalchemy, alembic, pydantic, jose, passlib, openpyx
 
 ---
 
-## Linux Deployment
+## Linux Deployment (LAN-Only)
 
-Recommended topology: **Nginx (TLS) → Gunicorn (Uvicorn workers) → SQLite/PostgreSQL**, managed by **systemd**.
+This deployment is **not exposed to the public internet**. Access is restricted to your internal
+network at three independent layers, so no single misconfiguration exposes the system externally:
+
+1. **Host firewall (primary control)** — `deploy/firewall_setup.sh` configures `ufw` to a default-deny
+   policy and only opens 22/80/443 to the CIDR ranges you supply. Nothing is ever opened to `0.0.0.0/0`.
+2. **Nginx `allow`/`deny` (defense in depth)** — `deploy/nginx.conf` repeats the same internal-network
+   allow-list at the reverse-proxy layer, so even a firewall misconfiguration doesn't expose the app.
+3. **Internal-only DNS/hostname** — give the server an internal-only name (e.g. `reservation-system.internal`
+   via `/etc/hosts` or an internal DNS zone); never register a publicly resolvable domain for it.
+
+The application process itself only ever binds a **unix socket** (`deploy/gunicorn_conf.py`), never a
+public TCP port, so even if the firewall/Nginx layers were bypassed, the app isn't listening on the network directly.
 
 ```
-Internet/Intranet ── Nginx (443) ── unix socket ── Gunicorn/Uvicorn workers ── DB
+LAN clients ── Nginx (443, LAN allow-list) ── unix socket ── Gunicorn/Uvicorn workers ── DB
 ```
 
 1. Create a dedicated service user and directory:
@@ -49,8 +60,18 @@ Internet/Intranet ── Nginx (443) ── unix socket ── Gunicorn/Uvicorn 
    sudo chown -R reservation-system:reservation-system /opt/reservation-system
    ```
 2. Deploy the application code to `/opt/reservation-system` and create the venv there (see [Python Setup](#python-setup)).
-3. Place your production `.env` at `/etc/reservation-system/.env` (see [Environment Variables](#environment-variables)) — never commit real secrets to the repo.
-4. Install the systemd unit and Nginx config (see [deploy/](deploy/)):
+3. Place your production `.env` at `/etc/reservation-system/.env` (see [Environment Variables](#environment-variables)) — never commit real secrets to the repo. Set `CORS_ALLOWED_ORIGINS` to your internal hostname only (e.g. `https://reservation-system.internal`), never a public origin.
+4. **Lock down the firewall** to your actual internal subnet(s) — run this before opening anything else:
+   ```bash
+   sudo ./deploy/firewall_setup.sh 192.168.1.0/24        # replace with your real LAN CIDR(s)
+   ```
+   Omit the argument to default to the standard private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) — narrow this to your actual subnet in production rather than relying on the defaults.
+5. Generate a certificate for internal TLS (a public CA cannot issue one for a non-publicly-resolvable name, which is expected here — either use this self-signed script or your organization's internal CA):
+   ```bash
+   sudo ./deploy/generate_self_signed_cert.sh reservation-system.internal
+   ```
+6. Edit `deploy/nginx.conf`'s `allow` directives (both `server` blocks) to match the **same** CIDR(s) you passed to `firewall_setup.sh`, and set `server_name` to your internal hostname.
+7. Install the systemd unit and Nginx config:
    ```bash
    sudo cp deploy/reservation-system.service /etc/systemd/system/
    sudo cp deploy/nginx.conf /etc/nginx/sites-available/reservation-system.conf
@@ -59,8 +80,15 @@ Internet/Intranet ── Nginx (443) ── unix socket ── Gunicorn/Uvicorn 
    sudo systemctl enable --now reservation-system
    sudo nginx -t && sudo systemctl reload nginx
    ```
-5. Confirm: `curl -s http://localhost/health` (via Nginx) should return `{"status": "ok"}`.
+8. From a machine **on the LAN**, confirm `curl -sk https://reservation-system.internal/health` returns `{"status": "ok"}`. From a machine **outside** the allowed CIDR(s), confirm the same request times out / is refused (this is the check that actually matters).
 
+**Docker Compose users:** `docker-compose.yml` already binds the container's port to `127.0.0.1:8000` only — Nginx on the host is still the thing LAN clients talk to; the container itself is never reachable directly, even from other machines on the LAN. Switch `deploy/nginx.conf`'s `location /` block to `proxy_pass http://127.0.0.1:8000;` (commented alternative already present in the file) instead of the unix-socket line when running via Docker.
+
+**Do not**, under any circumstances:
+- Port-forward 80/443 from a router/NAT to this host.
+- Set `CORS_ALLOWED_ORIGINS` to `*` or a public domain.
+- Change the Docker port mapping to `0.0.0.0:8000:8000` or `8000:8000` (this bypasses both the firewall's application-layer intent and Nginx's allow-list).
+- Request a public CA certificate for the internal hostname (a public cert implies public DNS resolution, which defeats the point).
 For a container-based deployment instead, see [Docker](#docker).
 
 ---
@@ -88,7 +116,7 @@ All configuration is sourced from environment variables (`app/core/config.py::Se
 | `MAX_EXPORT_ROWS` | `50000` | Safety cap on export row count |
 | `EXCEL_LOG_DIR` | `./logs/excel_logs` | Rotating Excel transaction log root (Developer Logs) |
 | `EXCEL_LOG_ROTATE_MAX_BYTES` | `41943040` (40MB) | Rotate to a new Excel log file past this size |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:8000` | Comma-separated allow-list |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:8000` | Comma-separated allow-list. In production, set to your internal hostname only (e.g. `https://reservation-system.internal`) — never `*` or a public domain, see [Linux Deployment (LAN-Only)](#linux-deployment-lan-only) |
 | `RESERVATION_MIN_LEAD_MINUTES` | `0` | Minimum lead time before a reservation can start |
 | `SWAP_REQUIRE_SAME_PRODUCT` | `true` | Restrict single swaps to the same Product |
 | `SEED_ADMIN_USERNAME` / `_EMAIL` / `_PASSWORD` / `_FULL_NAME` | see `.env.example` | Used only by `scripts/create_admin.py` |
@@ -217,6 +245,8 @@ docker compose exec app python -m scripts.create_admin
 ```
 
 See `Dockerfile` and `docker-compose.yml` at the project root. The compose file mounts a named volume for the SQLite file and a bind mount for `logs/`, so data survives container recreation. Set real values in a `.env` file next to `docker-compose.yml` (loaded automatically by Compose).
+
+`docker-compose.yml` binds the container's port to `127.0.0.1:8000` only — it is **not** reachable from the network directly. Run Nginx on the Docker host per [Linux Deployment (LAN-Only)](#linux-deployment-lan-only) (with `firewall_setup.sh` and the LAN `allow`/`deny` list) to actually expose it to LAN clients; do not change the compose port mapping to `0.0.0.0:8000:8000`.
 
 ---
 
