@@ -25,9 +25,12 @@ from app.repositories.sqlalchemy.user_repository import UserRepository
 from app.services.announcement_service import AnnouncementService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
+from app.services.developer_logs_service import DeveloperLogsService
+from app.services.email_service import EmailService
 from app.services.export_service import ExportService
 from app.services.group_service import GroupService
 from app.services.import_service import ImportService
+from app.services.notification_service import NotificationService
 from app.services.product_service import ProductService
 from app.services.reservation_service import ReservationService
 from app.services.role_lookup_service import RoleLookupService
@@ -92,6 +95,24 @@ def get_role_lookup_service(role_repository: RoleRepository = Depends(get_role_r
     return RoleLookupService(role_repository)
 
 
+def get_email_service() -> EmailService:
+    return EmailService()
+
+
+def get_notification_service(
+    announcement_repository: AnnouncementRepository = Depends(get_announcement_repository),
+    user_repository: UserRepository = Depends(get_user_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+    email_service: EmailService = Depends(get_email_service),
+) -> NotificationService:
+    announcement_service = AnnouncementService(announcement_repository, audit_service)
+    return NotificationService(announcement_service, email_service, user_repository)
+
+
+def get_developer_logs_service() -> DeveloperLogsService:
+    return DeveloperLogsService()
+
+
 def get_auth_service(
     user_repository: UserRepository = Depends(get_user_repository),
     refresh_token_repository: RefreshTokenRepository = Depends(get_refresh_token_repository),
@@ -135,8 +156,10 @@ def get_reservation_service(
     setup_repository: SetupRepository = Depends(get_setup_repository),
     role_lookup_service: RoleLookupService = Depends(get_role_lookup_service),
     audit_service: AuditService = Depends(get_audit_service),
+    swap_repository: SwapRepository = Depends(get_swap_repository),
+    notification_service: NotificationService = Depends(get_notification_service),
 ) -> ReservationService:
-    return ReservationService(reservation_repository, setup_repository, role_lookup_service, audit_service)
+    return ReservationService(reservation_repository, setup_repository, role_lookup_service, audit_service, swap_repository, notification_service)
 
 
 def get_swap_service(

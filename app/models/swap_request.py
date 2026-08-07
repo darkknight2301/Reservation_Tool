@@ -19,6 +19,7 @@ class SwapRequest(Base):
 
     status = Column(String(20), nullable=False, default=SwapStatus.PENDING, index=True)
     reason = Column(String(500), nullable=True)
+    batch_id = Column(String(36), nullable=True, index=True)
 
     approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

@@ -1,5 +1,6 @@
 """Import service: validates and upserts Setup records from an Excel workbook."""
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List
 
 from pydantic import ValidationError
@@ -16,6 +17,7 @@ from app.repositories.interfaces.i_user_repository import IUserRepository
 from app.schemas.export_import import ImportResultResponse, ImportRowError
 from app.schemas.setup import SetupCreateRequest
 from app.services.audit_service import AuditService
+from app.utils.excel_log_rotator import append_excel_transactions
 from app.utils.excel_reader import read_setup_import_rows
 
 
@@ -63,6 +65,21 @@ class ImportService:
                 resolved_rows.append(raw_row)
 
         if errors:
+            self._export_repository.create_transaction_logs(transaction_logs)
+            append_excel_transactions(
+                [
+                    {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "operation": log.operation,
+                        "entity_type": log.entity_type,
+                        "row_number": log.row_number,
+                        "status": log.status,
+                        "message": log.message,
+                        "user": acting_user.username,
+                    }
+                    for log in transaction_logs
+                ]
+            )
             return ImportResultResponse(
                 batch_id=batch_id, entity_type="Setup", total_rows=len(rows), created_count=0,
                 updated_count=0, error_count=len(errors), errors=errors, committed=False,
@@ -127,6 +144,20 @@ class ImportService:
             )
 
         self._export_repository.create_transaction_logs(transaction_logs)
+        append_excel_transactions(
+            [
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "operation": log.operation,
+                    "entity_type": log.entity_type,
+                    "row_number": log.row_number,
+                    "status": log.status,
+                    "message": log.message,
+                    "user": acting_user.username,
+                }
+                for log in transaction_logs
+            ]
+        )
 
         return ImportResultResponse(
             batch_id=batch_id, entity_type="Setup", total_rows=len(rows), created_count=created_count,

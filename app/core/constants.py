@@ -46,6 +46,8 @@ class PermissionCode:
 
     AUDIT_VIEW = "audit:view"
 
+    LOGS_VIEW = "logs:view"
+
     EXPORT_RUN = "export:run"
     IMPORT_RUN = "import:run"
 
@@ -67,9 +69,21 @@ class PermissionCode:
         ANNOUNCEMENT_MANAGE,
         ANNOUNCEMENT_VIEW,
         AUDIT_VIEW,
+        LOGS_VIEW,
         EXPORT_RUN,
         IMPORT_RUN,
     )
+
+
+class AnnouncementChannel:
+    """Broadcast channels selectable when creating a reservation (or an announcement directly)."""
+
+    WALL = "WALL"
+    MAIL_LEADS = "MAIL_LEADS"
+    MAIL_GROUP = "MAIL_GROUP"
+    MAIL_ALL = "MAIL_ALL"
+
+    ALL = (WALL, MAIL_LEADS, MAIL_GROUP, MAIL_ALL)
 
 
 # Default role -> permission matrix used by the database seeding routine.
@@ -107,6 +121,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PermissionCode.SWAP_APPROVE,
         PermissionCode.SWAP_VIEW,
         PermissionCode.ANNOUNCEMENT_VIEW,
+        PermissionCode.LOGS_VIEW,
         PermissionCode.EXPORT_RUN,
         PermissionCode.IMPORT_RUN,
     ],
@@ -128,6 +143,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PermissionCode.ANNOUNCEMENT_MANAGE,
         PermissionCode.ANNOUNCEMENT_VIEW,
         PermissionCode.AUDIT_VIEW,
+        PermissionCode.LOGS_VIEW,
         PermissionCode.EXPORT_RUN,
         PermissionCode.IMPORT_RUN,
     ],

@@ -1,0 +1,144 @@
+/* Reservation Management System - custom styles
+   Built on top of Bootstrap 5.3's native color-mode support
+   (data-bs-theme="light" | "dark" on <html>). */
+
+:root {
+    --rms-radius: 0.65rem;
+    --rms-transition: 0.15s ease-in-out;
+}
+
+body {
+    min-height: 100vh;
+    transition: background-color var(--rms-transition), color var(--rms-transition);
+}
+
+/* ---------- Cards ---------- */
+.rms-card {
+    border-radius: var(--rms-radius);
+    border: 1px solid var(--bs-border-color);
+    transition: box-shadow var(--rms-transition), transform var(--rms-transition);
+}
+.rms-card:hover {
+    box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.08);
+}
+.rms-card.rms-card-clickable {
+    cursor: pointer;
+}
+.rms-card.rms-card-clickable:hover {
+    transform: translateY(-2px);
+}
+.rms-stat-icon {
+    width: 3rem;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 1.4rem;
+}
+
+/* ---------- Sticky table ---------- */
+.rms-table-wrapper {
+    max-height: 70vh;
+    overflow: auto;
+    border-radius: var(--rms-radius);
+    border: 1px solid var(--bs-border-color);
+}
+.rms-table-wrapper table {
+    margin-bottom: 0;
+}
+.rms-table-wrapper thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background-color: var(--bs-tertiary-bg);
+    white-space: nowrap;
+}
+.rms-table-wrapper thead tr.rms-filter-row th {
+    top: 41px; /* stacks beneath the header row */
+    background-color: var(--bs-body-bg);
+    padding: 0.25rem 0.4rem;
+}
+.rms-table-wrapper tbody td {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.rms-filter-row input,
+.rms-filter-row select {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.4rem;
+}
+
+/* ---------- Status badges ---------- */
+.badge.rms-status-AVAILABLE { background-color: #198754; }
+.badge.rms-status-RESERVED { background-color: #fd7e14; }
+.badge.rms-status-MAINTENANCE { background-color: #6c757d; }
+.badge.rms-status-RETIRED { background-color: #dc3545; }
+.badge.rms-status-ACTIVE { background-color: #0d6efd; }
+.badge.rms-status-COMPLETED { background-color: #198754; }
+.badge.rms-status-CANCELLED { background-color: #6c757d; }
+.badge.rms-status-SWAPPED { background-color: #6f42c1; }
+.badge.rms-status-PENDING { background-color: #ffc107; color: #212529; }
+.badge.rms-status-APPROVED { background-color: #198754; }
+.badge.rms-status-REJECTED { background-color: #dc3545; }
+.badge.rms-status-DISABLED { background-color: #6c757d; }
+.badge.rms-priority-LOW { background-color: #6c757d; }
+.badge.rms-priority-NORMAL { background-color: #0d6efd; }
+.badge.rms-priority-HIGH { background-color: #fd7e14; }
+.badge.rms-priority-CRITICAL { background-color: #dc3545; }
+
+/* ---------- Loading indicator ---------- */
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+    display: inline-flex;
+}
+.rms-overlay-spinner {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.15);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1090;
+}
+.htmx-request .rms-overlay-spinner,
+body.rms-loading .rms-overlay-spinner {
+    display: flex;
+}
+
+/* ---------- Auth screens ---------- */
+.rms-auth-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--bs-primary-bg-subtle), var(--bs-body-bg));
+}
+.rms-auth-card {
+    max-width: 420px;
+    width: 100%;
+}
+
+/* ---------- Announcement priority left-border ---------- */
+.rms-announcement {
+    border-left: 4px solid var(--bs-secondary);
+    border-radius: var(--rms-radius);
+}
+.rms-announcement.rms-priority-LOW { border-left-color: #6c757d; }
+.rms-announcement.rms-priority-NORMAL { border-left-color: #0d6efd; }
+.rms-announcement.rms-priority-HIGH { border-left-color: #fd7e14; }
+.rms-announcement.rms-priority-CRITICAL { border-left-color: #dc3545; }
+
+/* ---------- Misc ---------- */
+.rms-checkbox-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+.rms-truncate {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

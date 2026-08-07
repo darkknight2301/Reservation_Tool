@@ -1,5 +1,5 @@
 """Reservation ORM model. Source of truth for a setup's reserved time window."""
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.core.constants import ReservationStatus
@@ -19,7 +19,7 @@ class Reservation(Base):
     reserved_until = Column(DateTime, nullable=False)
 
     status = Column(String(20), nullable=False, default=ReservationStatus.ACTIVE, index=True)
-    purpose = Column(String(500), nullable=True)
+    remarks = Column(Text, nullable=True)
 
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

@@ -1,0 +1,57 @@
+<div class="modal fade" id="announcementModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form hx-post="/announcements/save" hx-target="#announcementList" hx-swap="innerHTML">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-megaphone me-2"></i>{{ "Edit" if announcement else "New" }} Announcement</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="announcement_id" value="{{ announcement.id if announcement else '' }}">
+                    <div class="mb-2">
+                        <label class="form-label small">Title</label>
+                        <input type="text" class="form-control" name="title" value="{{ announcement.title if announcement else '' }}" required maxlength="200">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Message</label>
+                        <textarea class="form-control" name="message" rows="3" required maxlength="2000">{{ announcement.message if announcement else '' }}</textarea>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small">Priority</label>
+                            <select class="form-select" name="priority" required>
+                                {% for p in priorities %}
+                                <option value="{{ p }}" {% if announcement and announcement.priority == p %}selected{% endif %}>{{ p }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label small">Start</label>
+                            <input type="datetime-local" class="form-control" name="start_date"
+                                   value="{{ announcement.start_date.strftime('%Y-%m-%dT%H:%M') if announcement else '' }}" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">End (optional)</label>
+                            <input type="datetime-local" class="form-control" name="end_date"
+                                   value="{{ announcement.end_date.strftime('%Y-%m-%dT%H:%M') if announcement and announcement.end_date else '' }}">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("announcementModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+    })();
+</script>

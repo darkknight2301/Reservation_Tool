@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Group Management - Reservation System{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-people me-2"></i>Group Management</h4>
+    <button class="btn btn-primary btn-sm" hx-get="/admin/groups/form" hx-target="#dialogContainer" hx-swap="innerHTML">
+        <i class="bi bi-plus-lg me-1"></i>New Group
+    </button>
+</div>
+<div id="groupList">
+    {% include "admin/_groups_list.html" %}
+</div>
+<div id="dialogContainer"></div>
+{% endblock %}

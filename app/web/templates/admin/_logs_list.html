@@ -1,0 +1,29 @@
+<div class="rms-table-wrapper">
+    <table class="table table-hover table-sm align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Timestamp (UTC)</th><th>User ID</th><th>Action</th><th>Entity Type</th><th>Entity ID</th>
+                <th>Old Value</th><th>New Value</th><th>IP Address</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td>{{ log.user_id or "—" }}</td>
+                <td><span class="badge text-bg-secondary">{{ log.action }}</span></td>
+                <td>{{ log.entity_type }}</td>
+                <td>{{ log.entity_id or "—" }}</td>
+                <td class="rms-truncate" title="{{ log.old_value or '' }}">{{ log.old_value or "—" }}</td>
+                <td class="rms-truncate" title="{{ log.new_value or '' }}">{{ log.new_value or "—" }}</td>
+                <td>{{ log.ip_address or "—" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No audit log entries match the current filters.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% set hx_get_base = "/admin/logs/table?entity_type=" ~ (filters.entity_type or "") ~ "&entity_id=" ~ (filters.entity_id or "") ~ "&user_id=" ~ (filters.user_id or "") ~ "&action=" ~ (filters.action or "") %}
+{% set hx_target = "#logsTableContainer" %}
+{% include "partials/pagination.html" %}

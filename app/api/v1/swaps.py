@@ -1,5 +1,5 @@
-"""Swap request endpoints: request, approve, reject, cancel."""
-from typing import Optional
+"""Swap request endpoints: request, approve, reject, cancel, and multi-node mapping swaps."""
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 
@@ -7,7 +7,13 @@ from app.api.deps import get_current_user, get_swap_service, require_permission
 from app.core.constants import PermissionCode
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
-from app.schemas.swap_request import SwapCreateRequest, SwapDecisionRequest, SwapFilter, SwapResponse
+from app.schemas.swap_request import (
+    SwapCreateRequest,
+    SwapDecisionRequest,
+    SwapFilter,
+    SwapMappingCreateRequest,
+    SwapResponse,
+)
 from app.services.swap_service import SwapService
 from app.utils.pagination import total_pages
 
@@ -81,3 +87,29 @@ def cancel_swap(
 ):
     """Cancel the current user's own pending swap request."""
     return swap_service.cancel(swap_id, current_user)
+
+
+@router.post("/mapping", response_model=List[SwapResponse], status_code=201)
+def create_swap_mapping(
+    payload: SwapMappingCreateRequest,
+    current_user: User = Depends(require_permission(PermissionCode.SWAP_APPROVE)),
+    swap_service: SwapService = Depends(get_swap_service),
+):
+    """
+    Create a coordinated multi-node swap mapping (e.g. A->B, B->A, C->D) as
+    a batch of PENDING swap requests. Requires ``swap:approve`` since the
+    mapping affects reservations belonging to more than one user.
+    """
+    created = swap_service.create_mapping(payload, current_user)
+    return [SwapResponse.from_orm(swap) for swap in created]
+
+
+@router.patch("/mapping/{batch_id}/approve", response_model=List[SwapResponse])
+def approve_swap_mapping(
+    batch_id: str,
+    current_user: User = Depends(require_permission(PermissionCode.SWAP_APPROVE)),
+    swap_service: SwapService = Depends(get_swap_service),
+):
+    """Approve every swap request in a mapping batch atomically. Requires ``swap:approve``."""
+    approved = swap_service.approve_mapping(batch_id, current_user)
+    return [SwapResponse.from_orm(swap) for swap in approved]

@@ -14,7 +14,16 @@ class ISwapRepository(Protocol):
     def list(self, filters: SwapFilter, page: int, page_size: int) -> Tuple[List[SwapRequest], int]:
         ...
 
+    def list_by_batch_id(self, batch_id: str) -> List[SwapRequest]:
+        ...
+
+    def get_pending_by_reservation_id(self, reservation_id: int) -> Optional[SwapRequest]:
+        ...
+
     def create(self, swap_request: SwapRequest) -> SwapRequest:
+        ...
+
+    def create_many(self, swap_requests: List[SwapRequest]) -> List[SwapRequest]:
         ...
 
     def update(self, swap_request: SwapRequest) -> SwapRequest:

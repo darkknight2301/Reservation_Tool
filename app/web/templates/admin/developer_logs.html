@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Developer Logs - Reservation System{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-file-earmark-diff me-2"></i>Developer Logs</h4>
+<p class="text-muted small">
+    Rotating Excel transaction logs for every Import/Export operation, organized by month.
+    Files rotate automatically once they reach 40MB.
+</p>
+
+{% macro render_node(node) %}
+    {% if node.type == "folder" %}
+    <li>
+        <span class="rms-tree-folder"><i class="bi bi-folder-fill text-warning me-1"></i>{{ node.name }}</span>
+        {% if node.children %}
+        <ul class="rms-tree-children">
+            {% for child in node.children %}
+            {{ render_node(child) }}
+            {% endfor %}
+        </ul>
+        {% else %}
+        <ul class="rms-tree-children"><li class="text-muted small">Empty</li></ul>
+        {% endif %}
+    </li>
+    {% else %}
+    <li class="d-flex align-items-center justify-content-between rms-tree-file">
+        <span><i class="bi bi-file-earmark-excel text-success me-1"></i>{{ node.name }}
+            <span class="text-muted small">({{ (node.size_bytes / 1024) | round(1) }} KB)</span>
+        </span>
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/developer-logs/download?path={{ node.relative_path }}">
+            <i class="bi bi-download"></i>
+        </a>
+    </li>
+    {% endif %}
+{% endmacro %}
+
+<div class="card rms-card">
+    <div class="card-body">
+        <ul class="rms-tree-root">
+            {{ render_node(tree) }}
+        </ul>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+    .rms-tree-root, .rms-tree-children { list-style: none; padding-left: 1.25rem; margin-bottom: 0; }
+    .rms-tree-root { padding-left: 0; }
+    .rms-tree-file { padding: 0.15rem 0; }
+    .rms-tree-folder { cursor: pointer; font-weight: 500; }
+</style>
+<script>
+    (function () {
+        document.querySelectorAll(".rms-tree-folder").forEach(function (folderLabel) {
+            folderLabel.addEventListener("click", function () {
+                var childList = folderLabel.parentElement.querySelector(".rms-tree-children");
+                if (childList) {
+                    childList.style.display = (childList.style.display === "none") ? "" : "none";
+                }
+            });
+        });
+    })();
+</script>
+{% endblock %}

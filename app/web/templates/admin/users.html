@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}User Management - Reservation System{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-person-gear me-2"></i>User Management</h4>
+    <button class="btn btn-primary btn-sm" hx-get="/admin/users/form" hx-target="#dialogContainer" hx-swap="innerHTML">
+        <i class="bi bi-plus-lg me-1"></i>New User
+    </button>
+</div>
+
+<div class="card rms-card mb-3">
+    <div class="card-body py-2">
+        <form class="row g-2" hx-get="/admin/users/list" hx-target="#userList" hx-swap="innerHTML">
+            <div class="col-md-4">
+                <input type="text" class="form-control form-control-sm" name="search" placeholder="Search username, email, name..."
+                       hx-get="/admin/users/list" hx-trigger="keyup changed delay:400ms" hx-target="#userList" hx-swap="innerHTML" hx-include="closest form">
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" name="role_name" hx-get="/admin/users/list" hx-trigger="change" hx-target="#userList" hx-swap="innerHTML" hx-include="closest form">
+                    <option value="">All Roles</option>
+                    {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" name="status" hx-get="/admin/users/list" hx-trigger="change" hx-target="#userList" hx-swap="innerHTML" hx-include="closest form">
+                    <option value="">All Statuses</option>
+                    <option value="PENDING">PENDING</option>
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="REJECTED">REJECTED</option>
+                    <option value="DISABLED">DISABLED</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="userList">
+    {% include "admin/_users_list.html" %}
+</div>
+<div id="dialogContainer"></div>
+{% endblock %}

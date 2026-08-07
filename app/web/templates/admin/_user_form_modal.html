@@ -1,0 +1,72 @@
+<div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form hx-post="/admin/users/save" hx-target="#userList" hx-swap="innerHTML">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-gear me-2"></i>{{ "Edit" if edited_user else "New" }} User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="user_id" value="{{ edited_user.id if edited_user else '' }}">
+
+                    {% if not edited_user %}
+                    <div class="mb-2">
+                        <label class="form-label small">Username</label>
+                        <input type="text" class="form-control" name="username" required minlength="3" maxlength="50">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Email</label>
+                        <input type="email" class="form-control" name="email" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Password</label>
+                        <input type="password" class="form-control" name="password" required minlength="8">
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-2">
+                        <label class="form-label small">Full name</label>
+                        <input type="text" class="form-control" name="full_name" value="{{ edited_user.full_name if edited_user else '' }}" required maxlength="150">
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small">Role</label>
+                            <select class="form-select" name="role_name" required>
+                                {% for r in roles %}
+                                <option value="{{ r }}" {% if edited_user and edited_user.role.name == r %}selected{% endif %}>{{ r }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Group</label>
+                            <select class="form-select" name="group_id">
+                                <option value="">None</option>
+                                {% for g in groups %}
+                                <option value="{{ g.id }}" {% if edited_user and edited_user.group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    {% if edited_user %}
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" id="isActiveCheck" name="is_active" value="true" {% if edited_user.is_active %}checked{% endif %}>
+                        <label class="form-check-label" for="isActiveCheck">Active</label>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("userModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+    })();
+</script>

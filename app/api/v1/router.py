@@ -8,6 +8,7 @@ from app.api.v1 import (
     exports,
     groups,
     imports,
+    logs,
     products,
     reservations,
     setups,
@@ -28,3 +29,4 @@ api_router.include_router(announcements.router)
 api_router.include_router(audit.router)
 api_router.include_router(exports.router)
 api_router.include_router(imports.router)
+api_router.include_router(logs.router)

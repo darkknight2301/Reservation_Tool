@@ -1,25 +1,40 @@
 """Pydantic schemas for the Reservation resource."""
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, validator
 
-from app.core.constants import ReservationStatus
+from app.core.constants import AnnouncementChannel, ReservationStatus
 
 
 class ReservationCreateRequest(BaseModel):
-    """Payload for creating a Reservation."""
+    """
+    Payload for creating a Reservation.
+
+    ``announcement_channels`` lets the reserving user optionally broadcast
+    the reservation: ``WALL`` posts a dashboard Announcement, ``MAIL_LEADS``
+    / ``MAIL_GROUP`` / ``MAIL_ALL`` send email notifications scoped to the
+    setup's Group. All are optional and may be combined.
+    """
 
     setup_id: int
     reserved_from: datetime
     reserved_until: datetime
-    purpose: Optional[str] = Field(default=None, max_length=500)
+    remarks: Optional[str] = Field(default=None, max_length=2000)
+    announcement_channels: List[str] = Field(default_factory=list)
+    announcement_message: Optional[str] = Field(default=None, max_length=2000)
 
     @validator("reserved_until")
     def _validate_window(cls, value: datetime, values: dict) -> datetime:  # noqa: N805
         reserved_from = values.get("reserved_from")
         if reserved_from is not None and value <= reserved_from:
             raise ValueError("reserved_until must be after reserved_from.")
+        return value
+
+    @validator("announcement_channels", each_item=True)
+    def _validate_channel(cls, value: str) -> str:  # noqa: N805
+        if value not in AnnouncementChannel.ALL:
+            raise ValueError("announcement_channels entries must be one of: {0}".format(", ".join(AnnouncementChannel.ALL)))
         return value
 
 
@@ -32,7 +47,7 @@ class ReservationResponse(BaseModel):
     reserved_from: datetime
     reserved_until: datetime
     status: str
-    purpose: Optional[str] = None
+    remarks: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,0 +1,27 @@
+<div class="rms-table-wrapper">
+    <table class="table table-hover table-sm align-middle mb-0">
+        <thead><tr><th>Name</th><th>Description</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td>{{ product.name }}</td>
+                <td class="rms-truncate">{{ product.description or "—" }}</td>
+                <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="/admin/products/{{ product.id }}/export" title="Export setups">
+                        <i class="bi bi-file-earmark-excel"></i>
+                    </a>
+                    <button class="btn btn-outline-secondary btn-sm" hx-get="/admin/products/form?product_id={{ product.id }}"
+                            hx-target="#dialogContainer" hx-swap="innerHTML"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-outline-danger btn-sm" hx-delete="/admin/products/{{ product.id }}"
+                            hx-target="#productList" hx-swap="innerHTML"
+                            data-confirm-title="Delete product" data-confirm-body="Delete '{{ product.name }}'? Setups must be reassigned first.">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-center text-muted py-4">No products configured yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     EXPORT_DIR: str = Field(default="./logs/exports")
     MAX_EXPORT_ROWS: int = Field(default=50000)
 
+    # --- Rotating Excel transaction logs (Developer Logs screen) ---
+    EXCEL_LOG_DIR: str = Field(default="./logs/excel_logs")
+    EXCEL_LOG_ROTATE_MAX_BYTES: int = Field(default=40 * 1024 * 1024)
+
+    # --- Outbound email (announcement "Mail Leads/Groups/All Users" channels) ---
+    SMTP_ENABLED: bool = Field(default=False)
+    SMTP_HOST: str = Field(default="localhost")
+    SMTP_PORT: int = Field(default=587)
+    SMTP_USERNAME: str = Field(default="")
+    SMTP_PASSWORD: str = Field(default="")
+    SMTP_USE_TLS: bool = Field(default=True)
+    SMTP_FROM_ADDRESS: str = Field(default="reservation-system@example.com")
+
     # --- CORS ---
     CORS_ALLOWED_ORIGINS: str = Field(default="http://localhost:8000")
 

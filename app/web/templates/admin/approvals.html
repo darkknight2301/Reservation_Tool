@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Approval Dashboard - Reservation System{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-person-check me-2"></i>Approval Dashboard</h4>
+<div id="approvalList">
+    {% include "admin/_approvals_list.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,129 @@
+<div class="modal fade" id="reserveModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="reserveForm" hx-post="/setups/reserve" hx-target="#setupsTableContainer" hx-swap="innerHTML"
+                  hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('reserveModal')).hide(); }">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-calendar-plus me-2 text-success"></i>Reserve Setup{{ "s" if setups|length > 1 else "" }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="setup_ids" value="{{ setup_ids }}">
+
+                    <!-- Step 1: form -->
+                    <div id="reserveStepForm">
+                        <p class="small text-muted mb-2">Reserving:</p>
+                        <ul class="list-group list-group-flush mb-3">
+                            {% for setup in setups %}
+                            <li class="list-group-item px-0 py-1"><i class="bi bi-hdd-network me-1"></i>{{ setup.hostname }} ({{ setup.ip_address }})</li>
+                            {% endfor %}
+                        </ul>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small">From</label>
+                                <input type="datetime-local" class="form-control" id="reservedFromInput" name="reserved_from" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small">Until</label>
+                                <input type="datetime-local" class="form-control" id="reservedUntilInput" name="reserved_until" required>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label class="form-label small">Remarks</label>
+                            <textarea class="form-control" id="remarksInput" name="remarks" rows="2"></textarea>
+                        </div>
+                        <div class="mt-3">
+                            <label class="form-label small d-block">Announce this reservation via</label>
+                            {% for channel in announcement_channels %}
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input announcement-channel-check" type="checkbox" name="announcement_channels" value="{{ channel }}" id="chan_{{ channel }}">
+                                <label class="form-check-label small" for="chan_{{ channel }}">
+                                    {% if channel == "WALL" %}Wall Message
+                                    {% elif channel == "MAIL_LEADS" %}Mail Leads
+                                    {% elif channel == "MAIL_GROUP" %}Groups
+                                    {% elif channel == "MAIL_ALL" %}All Users
+                                    {% endif %}
+                                </label>
+                            </div>
+                            {% endfor %}
+                            <textarea class="form-control mt-2 d-none" id="announcementMessageInput" name="announcement_message" rows="2" placeholder="Custom announcement message (optional)"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: preview -->
+                    <div id="reserveStepPreview" class="d-none">
+                        <div class="alert alert-secondary">
+                            <i class="bi bi-eye me-1"></i>Please review before confirming.
+                        </div>
+                        <dl class="row mb-0 small">
+                            <dt class="col-4">Setups</dt>
+                            <dd class="col-8" id="previewSetups"></dd>
+                            <dt class="col-4">From</dt>
+                            <dd class="col-8" id="previewFrom"></dd>
+                            <dt class="col-4">Until</dt>
+                            <dd class="col-8" id="previewUntil"></dd>
+                            <dt class="col-4">Remarks</dt>
+                            <dd class="col-8" id="previewRemarks"></dd>
+                            <dt class="col-4">Announce via</dt>
+                            <dd class="col-8" id="previewChannels"></dd>
+                        </dl>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="reserveBackBtn" class="btn btn-outline-secondary d-none"><i class="bi bi-arrow-left me-1"></i>Back</button>
+                    <button type="button" id="reserveNextBtn" class="btn btn-primary"><i class="bi bi-arrow-right me-1"></i>Preview</button>
+                    <button type="submit" id="reserveConfirmBtn" class="btn btn-success d-none"><i class="bi bi-check-lg me-1"></i>Confirm Reservation</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("reserveModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+
+        var stepForm = document.getElementById("reserveStepForm");
+        var stepPreview = document.getElementById("reserveStepPreview");
+        var nextBtn = document.getElementById("reserveNextBtn");
+        var backBtn = document.getElementById("reserveBackBtn");
+        var confirmBtn = document.getElementById("reserveConfirmBtn");
+        var messageBox = document.getElementById("announcementMessageInput");
+
+        document.querySelectorAll(".announcement-channel-check").forEach(function (checkbox) {
+            checkbox.addEventListener("change", function () {
+                var anyChecked = Array.from(document.querySelectorAll(".announcement-channel-check")).some(function (c) { return c.checked; });
+                messageBox.classList.toggle("d-none", !anyChecked);
+            });
+        });
+
+        nextBtn.addEventListener("click", function () {
+            var setupNames = Array.from(document.querySelectorAll("#reserveStepForm .list-group-item")).map(function (li) { return li.textContent.trim(); });
+            document.getElementById("previewSetups").textContent = setupNames.join(", ");
+            document.getElementById("previewFrom").textContent = document.getElementById("reservedFromInput").value || "—";
+            document.getElementById("previewUntil").textContent = document.getElementById("reservedUntilInput").value || "—";
+            document.getElementById("previewRemarks").textContent = document.getElementById("remarksInput").value || "—";
+            var channels = Array.from(document.querySelectorAll(".announcement-channel-check:checked")).map(function (c) {
+                return c.nextElementSibling.textContent.trim();
+            });
+            document.getElementById("previewChannels").textContent = channels.length ? channels.join(", ") : "None";
+
+            stepForm.classList.add("d-none");
+            stepPreview.classList.remove("d-none");
+            nextBtn.classList.add("d-none");
+            backBtn.classList.remove("d-none");
+            confirmBtn.classList.remove("d-none");
+        });
+
+        backBtn.addEventListener("click", function () {
+            stepForm.classList.remove("d-none");
+            stepPreview.classList.add("d-none");
+            nextBtn.classList.remove("d-none");
+            backBtn.classList.add("d-none");
+            confirmBtn.classList.add("d-none");
+        });
+    })();
+</script>

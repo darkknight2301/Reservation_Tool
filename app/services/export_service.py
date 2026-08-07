@@ -15,6 +15,8 @@ from app.repositories.interfaces.i_setup_repository import ISetupRepository
 from app.schemas.reservation import ReservationFilter
 from app.schemas.setup import SetupFilter
 from app.services.audit_service import AuditService
+from app.utils.excel_log_rotator import append_excel_transactions
+from app.utils.excel_reader import SETUP_IMPORT_COLUMNS
 from app.utils.excel_writer import build_export_context, write_excel_workbook
 
 _SETUP_HEADERS = [
@@ -23,7 +25,7 @@ _SETUP_HEADERS = [
     "aardvark", "quarch", "apc", "remote_server", "location", "remarks", "status",
 ]
 _RESERVATION_HEADERS = [
-    "id", "setup_id", "user_id", "reserved_from", "reserved_until", "status", "purpose",
+    "id", "setup_id", "user_id", "reserved_from", "reserved_until", "status", "remarks",
 ]
 
 
@@ -54,6 +56,7 @@ class ExportService:
         )
         created = self._export_repository.create_export_log(export_log)
         batch_id = str(uuid.uuid4())
+        message = "Export completed." if row_count > 0 else "Export completed (empty template generated)."
         self._export_repository.create_transaction_logs(
             [
                 ExcelTransactionLog(
@@ -62,9 +65,22 @@ class ExportService:
                     entity_type=export_type,
                     row_number=row_count,
                     status="SUCCESS",
-                    message="Export completed.",
+                    message=message,
                     user_id=acting_user.id,
                 )
+            ]
+        )
+        append_excel_transactions(
+            [
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "operation": "EXPORT",
+                    "entity_type": export_type,
+                    "row_number": row_count,
+                    "status": "SUCCESS",
+                    "message": message,
+                    "user": acting_user.username,
+                }
             ]
         )
         self._audit_service.record(
@@ -77,27 +93,40 @@ class ExportService:
         return created
 
     def export_setups(self, filters: SetupFilter, acting_user: User) -> ExportLog:
+        """
+        Export Setups matching the given filters. If no rows match (e.g. a
+        brand-new Product with no Setups configured yet), an empty
+        *import-ready template* is generated instead of a blank export, so
+        the user can immediately fill it in and re-upload via Import.
+        """
         setups = self._setup_repository.list_all(filters)
-        rows: List[List[Any]] = [
-            [
-                setup.id, setup.product_id, setup.group_id, setup.ip_address, setup.hostname,
-                setup.ssd, setup.hdd, setup.hardware_info, setup.capacity, setup.form_factor,
-                setup.owner_id, setup.adapter, setup.aardvark, setup.quarch, setup.apc,
-                setup.remote_server, setup.location, setup.remarks, setup.status,
-            ]
-            for setup in setups
-        ]
         os.makedirs(settings.EXPORT_DIR, exist_ok=True)
         file_name = "setups_{0}_{1}.xlsx".format(datetime.utcnow().strftime("%Y%m%dT%H%M%S"), uuid.uuid4().hex[:8])
         file_path = os.path.join(settings.EXPORT_DIR, file_name)
-        context = build_export_context(acting_user.username, datetime.utcnow(), filters.dict(exclude_none=True), len(rows))
-        write_excel_workbook(_SETUP_HEADERS, rows, "Setups", context, file_path)
-        return self._finalize(ExportType.SETUPS, file_path, filters.dict(exclude_none=True), len(rows), acting_user)
+        context = build_export_context(acting_user.username, datetime.utcnow(), filters.dict(exclude_none=True), len(setups))
+
+        if setups:
+            rows: List[List[Any]] = [
+                [
+                    setup.id, setup.product_id, setup.group_id, setup.ip_address, setup.hostname,
+                    setup.ssd, setup.hdd, setup.hardware_info, setup.capacity, setup.form_factor,
+                    setup.owner_id, setup.adapter, setup.aardvark, setup.quarch, setup.apc,
+                    setup.remote_server, setup.location, setup.remarks, setup.status,
+                ]
+                for setup in setups
+            ]
+            context["Note"] = "Full export."
+            write_excel_workbook(_SETUP_HEADERS, rows, "Setups", context, file_path)
+        else:
+            context["Note"] = "No Setups found for the given filters -- empty import template generated instead."
+            write_excel_workbook(SETUP_IMPORT_COLUMNS, [], "Template", context, file_path)
+
+        return self._finalize(ExportType.SETUPS, file_path, filters.dict(exclude_none=True), len(setups), acting_user)
 
     def export_reservations(self, filters: ReservationFilter, acting_user: User) -> ExportLog:
         reservations = self._reservation_repository.list_all(filters)
         rows: List[List[Any]] = [
-            [r.id, r.setup_id, r.user_id, r.reserved_from, r.reserved_until, r.status, r.purpose]
+            [r.id, r.setup_id, r.user_id, r.reserved_from, r.reserved_until, r.status, r.remarks]
             for r in reservations
         ]
         os.makedirs(settings.EXPORT_DIR, exist_ok=True)
@@ -110,3 +139,13 @@ class ExportService:
         return self._finalize(
             ExportType.RESERVATIONS, file_path, filters.dict(exclude_none=True), len(rows), acting_user
         )
+
+    def generate_setup_template(self, acting_user: User) -> ExportLog:
+        """Explicitly generate an empty, import-ready Setup template (e.g. for a brand-new Product)."""
+        os.makedirs(settings.EXPORT_DIR, exist_ok=True)
+        file_name = "setups_template_{0}_{1}.xlsx".format(datetime.utcnow().strftime("%Y%m%dT%H%M%S"), uuid.uuid4().hex[:8])
+        file_path = os.path.join(settings.EXPORT_DIR, file_name)
+        context = build_export_context(acting_user.username, datetime.utcnow(), {}, 0)
+        context["Note"] = "Empty import template."
+        write_excel_workbook(SETUP_IMPORT_COLUMNS, [], "Template", context, file_path)
+        return self._finalize(ExportType.SETUPS, file_path, {}, 0, acting_user)

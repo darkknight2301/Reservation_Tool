@@ -1,0 +1,37 @@
+<div class="row g-3">
+    {% for u in pending_users %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card rms-card h-100">
+            <div class="card-body">
+                <h6 class="mb-1">{{ u.full_name }}</h6>
+                <p class="text-muted small mb-2">@{{ u.username }} &middot; {{ u.email }}</p>
+                {% if u.group %}<p class="small mb-2"><i class="bi bi-people me-1"></i>{{ u.group.name }}</p>{% endif %}
+
+                <label class="form-label small">Assign role on approval</label>
+                <select class="form-select form-select-sm mb-2" id="roleSelect_{{ u.id }}">
+                    {% for r in roles %}<option value="{{ r }}" {% if r == "USER" %}selected{% endif %}>{{ r }}</option>{% endfor %}
+                </select>
+                <input type="text" class="form-control form-control-sm mb-2" id="rejectReason_{{ u.id }}" placeholder="Rejection reason (optional)">
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success btn-sm flex-fill"
+                            hx-post="/admin/approvals/{{ u.id }}" hx-target="#approvalList" hx-swap="innerHTML"
+                            hx-vals='js:{"approve":"true","role_name":document.getElementById("roleSelect_{{ u.id }}").value}'>
+                        <i class="bi bi-check-lg me-1"></i>Approve
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm flex-fill"
+                            hx-post="/admin/approvals/{{ u.id }}" hx-target="#approvalList" hx-swap="innerHTML"
+                            hx-vals='js:{"approve":"false","rejection_reason":document.getElementById("rejectReason_{{ u.id }}").value}'
+                            data-confirm-title="Reject registration" data-confirm-body="Reject '{{ u.username }}''s registration?">
+                        <i class="bi bi-x-lg me-1"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info mb-0">No registrations are currently pending approval.</div>
+    </div>
+    {% endfor %}
+</div>

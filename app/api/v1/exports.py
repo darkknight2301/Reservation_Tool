@@ -33,6 +33,20 @@ def export_setups(
     )
 
 
+@router.post("/setups/template")
+def export_setups_template(
+    current_user: User = Depends(require_permission(PermissionCode.EXPORT_RUN)),
+    export_service: ExportService = Depends(get_export_service),
+) -> FileResponse:
+    """Generate and download an empty, import-ready Setup template. Requires ``export:run``."""
+    export_log = export_service.generate_setup_template(current_user)
+    return FileResponse(
+        path=export_log.file_path,
+        filename=export_log.file_path.split("/")[-1],
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @router.post("/reservations")
 def export_reservations(
     user_id: Optional[int] = None,

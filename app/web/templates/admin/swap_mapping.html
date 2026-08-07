@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Swap Mapping - Reservation System{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-diagram-2 me-2"></i>Swap Mapping</h4>
+<p class="text-muted small">
+    Build a coordinated multi-node swap (e.g. A&rarr;B, B&rarr;A, C&rarr;D). Every reservation and every
+    target setup may appear at most once; a target outside the cycle must currently be AVAILABLE.
+</p>
+
+<div class="card rms-card mb-4">
+    <div class="card-body">
+        <form hx-post="/admin/swap-mapping/create" hx-target="#batchesList" hx-swap="innerHTML">
+            <div id="mappingRows">
+                <div class="row g-2 mb-2 mapping-row">
+                    <div class="col-5">
+                        <select class="form-select form-select-sm" name="reservation_ids" required>
+                            <option value="" disabled selected>Select reservation (current setup)</option>
+                            {% for r in active_reservations %}
+                            <option value="{{ r.id }}">{{ r.setup.hostname }} &mdash; {{ r.user.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-5">
+                        <select class="form-select form-select-sm" name="target_setup_ids" required>
+                            <option value="" disabled selected>Select target setup</option>
+                            {% for s in all_setups %}
+                            <option value="{{ s.id }}">{{ s.hostname }} ({{ s.status }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-2">
+                        <button type="button" class="btn btn-outline-danger btn-sm remove-row-btn"><i class="bi bi-dash-lg"></i></button>
+                    </div>
+                </div>
+            </div>
+            <button type="button" id="addMappingRowBtn" class="btn btn-outline-secondary btn-sm mb-3"><i class="bi bi-plus-lg me-1"></i>Add Row</button>
+            <div class="mb-3">
+                <label class="form-label small">Reason (optional)</label>
+                <input type="text" class="form-control form-control-sm" name="reason" maxlength="500">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-send me-1"></i>Submit Mapping</button>
+        </form>
+    </div>
+</div>
+
+<h5 class="mb-3">Pending Mapping Batches</h5>
+<div id="batchesList">
+    {% include "admin/_swap_mapping_batches.html" %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    (function () {
+        var rowsContainer = document.getElementById("mappingRows");
+        var addBtn = document.getElementById("addMappingRowBtn");
+
+        function wireRemove(row) {
+            row.querySelector(".remove-row-btn").addEventListener("click", function () {
+                if (rowsContainer.querySelectorAll(".mapping-row").length > 1) {
+                    row.remove();
+                }
+            });
+        }
+
+        addBtn.addEventListener("click", function () {
+            var firstRow = rowsContainer.querySelector(".mapping-row");
+            var clone = firstRow.cloneNode(true);
+            clone.querySelectorAll("select").forEach(function (select) { select.selectedIndex = 0; });
+            rowsContainer.appendChild(clone);
+            wireRemove(clone);
+        });
+
+        rowsContainer.querySelectorAll(".mapping-row").forEach(wireRemove);
+    })();
+</script>
+{% endblock %}

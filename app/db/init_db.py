@@ -31,6 +31,8 @@ _PERMISSION_DESCRIPTIONS = {
     PermissionCode.ANNOUNCEMENT_MANAGE: "Create, update, and delete announcements.",
     PermissionCode.ANNOUNCEMENT_VIEW: "View announcements.",
     PermissionCode.AUDIT_VIEW: "View the audit log.",
+    PermissionCode.LOGS_VIEW: "View and download the Developer Logs (rotating Excel transaction logs).",
+    PermissionCode.LOGS_VIEW: "View and download Developer Logs (rotating Excel transaction logs).",
     PermissionCode.EXPORT_RUN: "Run Excel exports.",
     PermissionCode.IMPORT_RUN: "Run Excel imports.",
 }

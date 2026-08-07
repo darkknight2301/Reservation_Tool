@@ -1,0 +1,25 @@
+{% for batch_id, swaps in batches.items() %}
+<div class="card rms-card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small text-muted">Batch <code>{{ batch_id[:8] }}</code></span>
+            <button class="btn btn-success btn-sm" hx-post="/admin/swap-mapping/{{ batch_id }}/approve"
+                    hx-target="#batchesList" hx-swap="innerHTML"
+                    data-confirm-title="Approve swap mapping" data-confirm-body="Approve all {{ swaps|length }} swaps in this batch?">
+                <i class="bi bi-check-lg me-1"></i>Approve Mapping
+            </button>
+        </div>
+        <ul class="list-group list-group-flush">
+            {% for swap in swaps %}
+            <li class="list-group-item px-0 py-1 small">
+                <i class="bi bi-arrow-right me-1"></i>Reservation #{{ swap.reservation_id }}:
+                {{ swap.current_setup.hostname }} &rarr; {{ swap.requested_setup.hostname }}
+                <span class="text-muted">(requested by {{ swap.requester.username }})</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info mb-0">No pending swap-mapping batches.</div>
+{% endfor %}

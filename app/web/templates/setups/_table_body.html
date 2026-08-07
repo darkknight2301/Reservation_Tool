@@ -1,0 +1,87 @@
+{% set is_admin_setup_manager = 'product:manage' in current_user_permissions %}
+<div class="rms-table-wrapper">
+    <table class="table table-hover table-sm align-middle mb-0">
+        <thead>
+            <tr>
+                <th style="width:2rem;"></th>
+                <th>Sr No</th>
+                <th>Status</th>
+                <th>IP</th>
+                <th>Hostname</th>
+                <th>User</th>
+                <th>Form Factor</th>
+                <th>Capacity</th>
+                <th>Aardvark</th>
+                <th>Quarch</th>
+                <th>APC</th>
+                <th>Remote Server</th>
+                <th>Hardware Info</th>
+                <th>Adapter</th>
+                <th>Owner</th>
+                <th>Location</th>
+                <th>Reserved Time</th>
+                <th>Remarks</th>
+            </tr>
+            <tr class="rms-filter-row">
+                <th></th>
+                <th></th>
+                <th></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="3" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="4" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="5" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="6" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="7" placeholder="Filter"></th>
+                <th></th>
+                <th></th>
+                <th></th>
+                <th></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="12" placeholder="Filter"></th>
+                <th></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="14" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="15" placeholder="Filter"></th>
+                <th></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="17" placeholder="Filter"></th>
+            </tr>
+        </thead>
+        <tbody id="setupsTableBody">
+            {% for row in rows %}
+            <tr data-setup-id="{{ row.setup.id }}"
+                data-status="{{ row.setup.status }}"
+                data-mine="{{ 'true' if row.is_mine else 'false' }}"
+                {% if row.reservation %}data-reservation-id="{{ row.reservation.id }}"{% endif %}>
+                <td>
+                    <input type="checkbox" class="form-check-input rms-setup-checkbox {% if not row.checkbox_enabled %}rms-checkbox-disabled{% endif %}"
+                           {% if not row.checkbox_enabled %}disabled{% endif %}>
+                </td>
+                <td>{{ loop.index + (page - 1) * page_size }}</td>
+                <td><span class="badge rms-status-{{ row.setup.status }}">{{ row.setup.status }}</span></td>
+                <td>{{ row.setup.ip_address }}</td>
+                <td>{{ row.setup.hostname }}</td>
+                <td>{{ row.reservation.user.full_name if row.reservation else "—" }}</td>
+                <td>{{ row.setup.form_factor or "—" }}</td>
+                <td>{{ row.setup.capacity or "—" }}</td>
+                <td>{{ row.setup.aardvark or "—" }}</td>
+                <td>{{ row.setup.quarch or "—" }}</td>
+                <td>{{ row.setup.apc or "—" }}</td>
+                <td>{{ row.setup.remote_server or "—" }}</td>
+                <td class="rms-truncate" title="{{ row.setup.hardware_info or '' }}">{{ row.setup.hardware_info or "—" }}</td>
+                <td>{{ row.setup.adapter or "—" }}</td>
+                <td>{{ row.setup.owner.full_name if row.setup.owner else "—" }}</td>
+                <td>{{ row.setup.location }}</td>
+                <td>
+                    {% if row.reservation %}
+                    {{ row.reservation.reserved_from.strftime("%Y-%m-%d %H:%M") }} &rarr; {{ row.reservation.reserved_until.strftime("%Y-%m-%d %H:%M") }}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="rms-truncate" title="{{ row.setup.remarks or '' }}">{{ row.setup.remarks or "—" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="18" class="text-center text-muted py-4">No setups match the current filters.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% set hx_get_base = "/setups/table?product_id=" ~ (filters.product_id or "") ~ "&group_id=" ~ (filters.group_id or "") ~ "&status=" ~ (filters.status or "") ~ "&location=" ~ (filters.location or "") ~ "&search=" ~ (filters.search or "") %}
+{% set hx_target = "#setupsTableContainer" %}
+{% include "partials/pagination.html" %}
