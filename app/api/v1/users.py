@@ -87,6 +87,31 @@ def delete_user(
     return MessageResponse(message="User deactivated successfully.")
 
 
+@router.delete("/{user_id}/permanent", response_model=MessageResponse)
+def hard_delete_user(
+    user_id: int,
+    current_user: User = Depends(require_permission(PermissionCode.USER_MANAGE)),
+    user_service: UserService = Depends(get_user_service),
+) -> MessageResponse:
+    """
+    Permanently delete a user. Requires ``user:manage``. Fails with 409 if
+    the user still has dependent records (reservations, swaps,
+    announcements, exports) -- deactivate instead in that case.
+    """
+    user_service.hard_delete(user_id, current_user)
+    return MessageResponse(message="User permanently deleted.")
+
+
+@router.post("/{user_id}/reactivate", response_model=UserResponse)
+def reactivate_user(
+    user_id: int,
+    current_user: User = Depends(require_permission(PermissionCode.USER_MANAGE)),
+    user_service: UserService = Depends(get_user_service),
+) -> User:
+    """Reactivate a disabled/rejected user. Requires ``user:manage``."""
+    return user_service.reactivate(user_id, current_user)
+
+
 @router.post("/{user_id}/approval", response_model=UserResponse)
 def process_user_approval(
     user_id: int,

@@ -89,6 +89,9 @@ def base_context(request: Request, current_user: Optional[User]) -> dict:
         "current_user": current_user,
         "current_user_permissions": get_permission_codes(current_user) if current_user else [],
     }
+
+
+def require_web_permission(permission_code: str) -> Callable[..., User]:
     """Dependency factory: like ``require_permission`` but raises ForbiddenWebError (renders a 403 page)."""
 
     def _check(

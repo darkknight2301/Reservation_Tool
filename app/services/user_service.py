@@ -99,6 +99,12 @@ class UserService:
             user.group_id = payload.group_id
         if payload.is_active is not None:
             user.is_active = payload.is_active
+            if payload.is_active and user.status == UserStatus.DISABLED:
+                # Re-enabling a disabled account must also lift the DISABLED
+                # status -- otherwise login stays blocked by
+                # AuthService.authenticate()'s status check even though
+                # is_active looks correct in the admin UI.
+                user.status = UserStatus.APPROVED
 
         updated_user = self._user_repository.update(user)
         self._audit_service.record(
@@ -122,6 +128,54 @@ class UserService:
             action=AuditAction.DELETE,
             entity_type="User",
             entity_id=user.id,
+        )
+
+    def reactivate(self, user_id: int, acting_user: User) -> User:
+        """
+        Reactivate a DISABLED or REJECTED user: restores ``is_active`` and
+        resets ``status`` back to APPROVED so the account can log in again.
+        """
+        user = self.get_by_id(user_id)
+        old_value = {"status": user.status, "is_active": user.is_active}
+
+        user.is_active = True
+        user.status = UserStatus.APPROVED
+
+        updated_user = self._user_repository.update(user)
+        self._audit_service.record(
+            user_id=acting_user.id,
+            action=AuditAction.UPDATE,
+            entity_type="User",
+            entity_id=updated_user.id,
+            old_value=old_value,
+            new_value={"status": updated_user.status, "is_active": updated_user.is_active},
+        )
+        return updated_user
+
+    def hard_delete(self, user_id: int, acting_user: User) -> None:
+        """
+        Permanently remove a user record.
+
+        Raises:
+            ConflictError: if the user still has dependent records
+                (reservations, swap requests, announcements, export logs,
+                etc.) that reference them -- use ``delete()`` (deactivate)
+                instead in that case.
+        """
+        user = self.get_by_id(user_id)
+        username = user.username
+        deleted = self._user_repository.delete(user_id)
+        if not deleted:
+            raise ConflictError(
+                "User '{0}' cannot be permanently deleted because other records (reservations, swaps, "
+                "announcements, or exports) still reference them. Deactivate the account instead.".format(username)
+            )
+        self._audit_service.record(
+            user_id=acting_user.id,
+            action=AuditAction.DELETE,
+            entity_type="User",
+            entity_id=user_id,
+            old_value={"username": username},
         )
 
     def process_approval(self, user_id: int, payload: UserApprovalRequest, acting_user: User) -> User:

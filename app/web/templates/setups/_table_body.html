@@ -73,7 +73,7 @@
                     {{ row.reservation.reserved_from.strftime("%Y-%m-%d %H:%M") }} &rarr; {{ row.reservation.reserved_until.strftime("%Y-%m-%d %H:%M") }}
                     {% else %}—{% endif %}
                 </td>
-                <td class="rms-truncate" title="{{ row.setup.remarks or '' }}">{{ row.setup.remarks or "—" }}</td>
+                <td class="rms-truncate" title="{{ (row.reservation.remarks if row.reservation and row.reservation.remarks else row.setup.remarks) or '' }}">{{ (row.reservation.remarks if row.reservation and row.reservation.remarks else row.setup.remarks) or "—" }}</td>
             </tr>
             {% else %}
             <tr><td colspan="18" class="text-center text-muted py-4">No setups match the current filters.</td></tr>

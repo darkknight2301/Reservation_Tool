@@ -295,11 +295,12 @@ def export_setups_web(
     group_id: Optional[int] = None,
     status: Optional[str] = None,
     location: Optional[str] = None,
+    search: Optional[str] = None,
     current_user: User = Depends(require_web_permission(PermissionCode.EXPORT_RUN)),
     export_service: ExportService = Depends(get_export_service),
 ):
     """Export the current Setup filter view to Excel (cookie-authed browser download)."""
-    filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location)
+    filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location, search=search)
     export_log = export_service.export_setups(filters, current_user)
     return FileResponse(
         path=export_log.file_path,

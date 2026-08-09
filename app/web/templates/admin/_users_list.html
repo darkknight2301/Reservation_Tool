@@ -19,10 +19,24 @@
                 <td class="text-end">
                     <button class="btn btn-outline-secondary btn-sm" hx-get="/admin/users/form?user_id={{ u.id }}"
                             hx-target="#dialogContainer" hx-swap="innerHTML"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-outline-danger btn-sm" hx-delete="/admin/users/{{ u.id }}"
+                    {% if u.is_active %}
+                    <button class="btn btn-outline-warning btn-sm" hx-delete="/admin/users/{{ u.id }}"
                             hx-target="#userList" hx-swap="innerHTML"
                             data-confirm-title="Deactivate user" data-confirm-body="Deactivate '{{ u.username }}'?">
                         <i class="bi bi-person-x"></i>
+                    </button>
+                    {% else %}
+                    <button class="btn btn-outline-success btn-sm" hx-post="/admin/users/{{ u.id }}/reactivate"
+                            hx-target="#userList" hx-swap="innerHTML"
+                            data-confirm-title="Activate user" data-confirm-body="Reactivate '{{ u.username }}'? They will be able to log in again.">
+                        <i class="bi bi-person-check"></i>
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-outline-danger btn-sm" hx-delete="/admin/users/{{ u.id }}/permanent"
+                            hx-target="#userList" hx-swap="innerHTML"
+                            data-confirm-title="Permanently delete user"
+                            data-confirm-body="Permanently delete '{{ u.username }}'? This cannot be undone and will fail if the user still has reservations, swaps, announcements, or exports on record.">
+                        <i class="bi bi-trash"></i>
                     </button>
                 </td>
             </tr>

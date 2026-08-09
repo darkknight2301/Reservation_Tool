@@ -54,9 +54,21 @@ def enable_sqlite_foreign_keys() -> None:
 
 
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency yielding a request-scoped SQLAlchemy session."""
+    """
+    FastAPI dependency yielding a request-scoped SQLAlchemy session.
+
+    Commits on successful completion of the request; rolls back if the
+    request raised. Without an explicit commit, SQLAlchemy's default
+    ``autocommit=False`` session discards (rolls back) any uncommitted
+    work when the session is closed, so every repository write would be
+    silently lost at the end of each request.
+    """
     db = SessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

@@ -2,6 +2,7 @@
 from typing import List, Optional, Tuple
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.role import Role
@@ -59,8 +60,23 @@ class UserRepository:
         self._db.refresh(user)
         return user
 
-    def delete(self, user_id: int) -> None:
+    def delete(self, user_id: int) -> bool:
+        """
+        Permanently delete a user.
+
+        Returns:
+            True if the user was deleted (or did not exist). False if the
+            delete was blocked by a foreign key constraint (the user still
+            has reservations, swap requests, announcements, or export logs
+            referencing them) -- the caller should fall back to deactivation.
+        """
         user = self.get_by_id(user_id)
-        if user is not None:
-            self._db.delete(user)
+        if user is None:
+            return True
+        self._db.delete(user)
+        try:
             self._db.flush()
+        except IntegrityError:
+            self._db.rollback()
+            return False
+        return True

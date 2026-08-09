@@ -132,6 +132,50 @@ def user_delete(
     return response
 
 
+@router.delete("/admin/users/{user_id}/permanent")
+def user_hard_delete(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(require_web_permission(PermissionCode.USER_MANAGE)),
+    user_service: UserService = Depends(get_user_service),
+):
+    """Permanently delete a User (blocked with a clear error if dependent records exist), then re-render the list."""
+    message, message_type = "User permanently deleted.", "success"
+    try:
+        user_service.hard_delete(user_id, current_user)
+    except AppError as exc:
+        message, message_type = exc.message, "error"
+
+    users, _ = user_service.list(UserFilter(), page=1, page_size=100)
+    context = base_context(request, current_user)
+    context.update({"users": users})
+    response = templates.TemplateResponse("admin/_users_list.html", context)
+    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    return response
+
+
+@router.post("/admin/users/{user_id}/reactivate")
+def user_reactivate(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(require_web_permission(PermissionCode.USER_MANAGE)),
+    user_service: UserService = Depends(get_user_service),
+):
+    """Reactivate a disabled/rejected User, then re-render the list."""
+    message, message_type = "User reactivated successfully.", "success"
+    try:
+        user_service.reactivate(user_id, current_user)
+    except AppError as exc:
+        message, message_type = exc.message, "error"
+
+    users, _ = user_service.list(UserFilter(), page=1, page_size=100)
+    context = base_context(request, current_user)
+    context.update({"users": users})
+    response = templates.TemplateResponse("admin/_users_list.html", context)
+    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    return response
+
+
 # ------------------------------------------------------------------------
 # Approval Dashboard
 # ------------------------------------------------------------------------

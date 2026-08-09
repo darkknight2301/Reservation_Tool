@@ -26,5 +26,5 @@ class IUserRepository(Protocol):
     def update(self, user: User) -> User:
         ...
 
-    def delete(self, user_id: int) -> None:
+    def delete(self, user_id: int) -> bool:
         ...
