@@ -11,6 +11,7 @@
                             hx-target="#dialogContainer" hx-swap="innerHTML"><i class="bi bi-pencil"></i></button>
                     <button class="btn btn-outline-danger btn-sm" hx-delete="/admin/groups/{{ group.id }}"
                             hx-target="#groupList" hx-swap="innerHTML"
+                            hx-confirm="Are you sure you want to delete '{{ group.name }}'?"
                             data-confirm-title="Delete group" data-confirm-body="Delete '{{ group.name }}'? Members/setups must be reassigned first.">
                         <i class="bi bi-trash"></i>
                     </button>
