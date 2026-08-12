@@ -63,19 +63,24 @@ class UserService:
             raise ConflictError("Email is already registered.", details={"field": "email"})
 
         role = self._role_lookup_service.get_role_by_name(payload.role_name)
+        primary_group_id = payload.group_id
+        if primary_group_id is None and payload.group_ids:
+            primary_group_id = payload.group_ids[0]
         user = User(
             username=payload.username,
             email=payload.email,
             password_hash=hash_password(payload.password),
             full_name=payload.full_name,
             role_id=role.id,
-            group_id=payload.group_id,
+            group_id=primary_group_id,
             status=UserStatus.APPROVED,
             is_active=True,
             approved_by_id=acting_user.id,
             approved_at=datetime.utcnow(),
         )
         created_user = self._user_repository.create(user)
+        if payload.group_ids is not None:
+            self._user_repository.set_groups(created_user, payload.group_ids)
         self._audit_service.record(
             user_id=acting_user.id,
             action=AuditAction.CREATE,
@@ -97,6 +102,8 @@ class UserService:
             user.role_id = role.id
         if payload.group_id is not None:
             user.group_id = payload.group_id
+        elif payload.group_ids:
+            user.group_id = payload.group_ids[0]
         if payload.is_active is not None:
             user.is_active = payload.is_active
             if payload.is_active and user.status == UserStatus.DISABLED:
@@ -107,6 +114,8 @@ class UserService:
                 user.status = UserStatus.APPROVED
 
         updated_user = self._user_repository.update(user)
+        if payload.group_ids is not None:
+            self._user_repository.set_groups(updated_user, payload.group_ids)
         self._audit_service.record(
             user_id=acting_user.id,
             action=AuditAction.UPDATE,

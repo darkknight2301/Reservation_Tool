@@ -1,14 +1,17 @@
 """Auth screens: login, register, logout. Sets/clears HttpOnly cookies for the web session."""
+from typing import List
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from starlette.status import HTTP_302_FOUND
 
-from app.api.deps import get_auth_service
+from app.api.deps import get_auth_service, get_group_service
 from app.core.config import settings
 from app.core.exceptions import AppError
 from app.schemas.auth import LoginRequest
 from app.schemas.user import UserRegisterRequest
 from app.services.auth_service import AuthService
+from app.services.group_service import GroupService
 from app.web.deps import get_optional_web_user, templates
 
 router = APIRouter(tags=["Web - Auth"])
@@ -58,12 +61,17 @@ def login_submit(
 
 
 @router.get("/register")
-def register_page(request: Request, current_user=Depends(get_optional_web_user)):
+def register_page(
+    request: Request,
+    current_user=Depends(get_optional_web_user),
+    group_service: GroupService = Depends(get_group_service),
+):
     """Render the self-service registration screen."""
     if current_user is not None:
         return RedirectResponse("/dashboard", status_code=HTTP_302_FOUND)
+    groups, _ = group_service.list(page=1, page_size=200)
     return templates.TemplateResponse(
-        "auth/register.html", {"request": request, "current_user": None, "error": None, "success": None}
+        "auth/register.html", {"request": request, "current_user": None, "error": None, "success": None, "groups": groups}
     )
 
 
@@ -74,21 +82,30 @@ def register_submit(
     email: str = Form(...),
     full_name: str = Form(...),
     password: str = Form(...),
+    group_ids: List[str] = Form(default=[]),
     auth_service: AuthService = Depends(get_auth_service),
+    group_service: GroupService = Depends(get_group_service),
 ):
     """Process the registration form. Account lands in PENDING status awaiting approval."""
     try:
-        payload = UserRegisterRequest(username=username, email=email, password=password, full_name=full_name)
+        payload = UserRegisterRequest(
+            username=username, email=email, password=password, full_name=full_name,
+            group_ids=[int(g) for g in group_ids if g],
+        )
         auth_service.register(payload, ip_address=request.client.host if request.client else None)
     except AppError as exc:
+        groups, _ = group_service.list(page=1, page_size=200)
         return templates.TemplateResponse(
             "auth/register.html",
-            {"request": request, "current_user": None, "error": exc.message, "success": None},
+            {"request": request, "current_user": None, "error": exc.message, "success": None, "groups": groups},
             status_code=exc.status_code,
         )
     except ValueError as exc:
+        groups, _ = group_service.list(page=1, page_size=200)
         return templates.TemplateResponse(
-            "auth/register.html", {"request": request, "current_user": None, "error": str(exc), "success": None}, status_code=422
+            "auth/register.html",
+            {"request": request, "current_user": None, "error": str(exc), "success": None, "groups": groups},
+            status_code=422,
         )
 
     return templates.TemplateResponse(

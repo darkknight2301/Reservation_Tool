@@ -223,6 +223,38 @@ class AuditAction:
     EXPORT = "EXPORT"
 
 
+class ColumnDataType:
+    """Supported data types for a product's custom template columns."""
+
+    STRING = "STRING"
+    INTEGER = "INTEGER"
+    FLOAT = "FLOAT"
+    BOOLEAN = "BOOLEAN"
+    DATE = "DATE"
+    DATETIME = "DATETIME"
+    DROPDOWN = "DROPDOWN"
+
+    ALL = (STRING, INTEGER, FLOAT, BOOLEAN, DATE, DATETIME, DROPDOWN)
+
+
+# The columns every Product's table/template always has, in canonical
+# display order. These map onto existing, already-persisted fields (Setup
+# columns or the Setup's active Reservation) rather than anything stored in
+# ``product_template_columns`` -- they can never be renamed, deleted, or
+# reordered, and a product's custom columns are always appended after them.
+MANDATORY_TEMPLATE_COLUMNS: List[Dict[str, str]] = [
+    {"name": "ip", "label": "IP"},
+    {"name": "user", "label": "User"},
+    {"name": "owner", "label": "Owner"},
+    {"name": "reservation", "label": "Reservation"},
+    {"name": "remark", "label": "Remark"},
+    {"name": "location", "label": "Location"},
+    {"name": "group", "label": "Group"},
+    {"name": "product", "label": "Product"},
+]
+MANDATORY_TEMPLATE_COLUMN_NAMES = tuple(col["name"] for col in MANDATORY_TEMPLATE_COLUMNS)
+
+
 class ExportType:
     """Kinds of Excel exports supported by the export service."""
 

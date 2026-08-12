@@ -77,3 +77,43 @@ def read_setup_import_rows(file_path: str) -> List[Dict[str, Any]]:
         parsed_rows.append(row_dict)
 
     return parsed_rows
+
+
+def read_workbook_headers_and_rows(file_path: str):
+    """
+    Parse an uploaded workbook's header row and data rows *without* enforcing
+    the fixed ``SETUP_IMPORT_COLUMNS`` contract, for the dynamic per-product
+    template import flow. Every column present in the sheet is returned,
+    whatever its name -- callers compare the header set against a Product's
+    current template themselves.
+
+    Returns:
+        A tuple of (header_labels, rows) where each row is a dict of
+        {header_label: cell_value} for that row.
+
+    Raises:
+        ImportValidationError: if the workbook has no header row at all.
+    """
+    workbook = load_workbook(filename=file_path, read_only=True, data_only=True)
+    worksheet = workbook.worksheets[0]
+
+    rows_iterator = worksheet.iter_rows(values_only=True)
+    try:
+        header_row: Sequence[Any] = next(rows_iterator)
+    except StopIteration:
+        raise ImportValidationError("The uploaded workbook is empty.")
+
+    header_labels = [str(cell).strip() if cell is not None else "" for cell in header_row]
+    header_labels = [label for label in header_labels if label]
+
+    rows: List[Dict[str, Any]] = []
+    for row_values in rows_iterator:
+        if row_values is None or all(value is None for value in row_values):
+            continue
+        row_dict: Dict[str, Any] = {}
+        for index, label in enumerate(header_labels):
+            value = row_values[index] if index < len(row_values) else None
+            row_dict[label] = value.strip() if isinstance(value, str) else value
+        rows.append(row_dict)
+
+    return header_labels, rows

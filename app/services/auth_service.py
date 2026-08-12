@@ -63,17 +63,22 @@ class AuthService:
             raise ConflictError("Email is already registered.", details={"field": "email"})
 
         default_role = self._role_lookup_service.get_role_by_name(RoleName.USER)
+        primary_group_id = payload.group_id
+        if primary_group_id is None and payload.group_ids:
+            primary_group_id = payload.group_ids[0]
         user = User(
             username=payload.username,
             email=payload.email,
             password_hash=hash_password(payload.password),
             full_name=payload.full_name,
             role_id=default_role.id,
-            group_id=payload.group_id,
+            group_id=primary_group_id,
             status=UserStatus.PENDING,
             is_active=True,
         )
         created_user = self._user_repository.create(user)
+        if payload.group_ids is not None:
+            self._user_repository.set_groups(created_user, payload.group_ids)
         self._audit_service.record(
             user_id=None,
             action=AuditAction.CREATE,

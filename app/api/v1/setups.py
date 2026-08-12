@@ -3,12 +3,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_setup_service, require_permission
+from app.api.deps import get_setup_service, get_template_service, require_permission
 from app.core.constants import PermissionCode
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.setup import SetupCreateRequest, SetupFilter, SetupResponse, SetupUpdateRequest
+from app.schemas.template import SetupCustomFieldsResponse, SetupCustomFieldsUpdateRequest
 from app.services.setup_service import SetupService
+from app.services.template_service import TemplateService
 from app.utils.pagination import total_pages
 
 router = APIRouter(prefix="/setups", tags=["Setups"])
@@ -77,3 +79,30 @@ def delete_setup(
     """Delete a Setup. Requires ``product:manage``."""
     setup_service.delete(setup_id, current_user)
     return MessageResponse(message="Setup deleted successfully.")
+
+
+@router.get("/{setup_id}/custom-fields", response_model=SetupCustomFieldsResponse)
+def get_setup_custom_fields(
+    setup_id: int,
+    _current_user: User = Depends(require_permission(PermissionCode.PRODUCT_VIEW)),
+    setup_service: SetupService = Depends(get_setup_service),
+    template_service: TemplateService = Depends(get_template_service),
+) -> SetupCustomFieldsResponse:
+    """Fetch a Setup's product-specific custom field values. Requires ``product:view``."""
+    setup = setup_service.get_by_id(setup_id)
+    values = template_service.get_values_map_for_setup(setup_id, setup.product_id)
+    return SetupCustomFieldsResponse(setup_id=setup_id, values=values)
+
+
+@router.put("/{setup_id}/custom-fields", response_model=SetupCustomFieldsResponse)
+def set_setup_custom_fields(
+    setup_id: int,
+    payload: SetupCustomFieldsUpdateRequest,
+    current_user: User = Depends(require_permission(PermissionCode.PRODUCT_MANAGE)),
+    setup_service: SetupService = Depends(get_setup_service),
+    template_service: TemplateService = Depends(get_template_service),
+) -> SetupCustomFieldsResponse:
+    """Set a Setup's product-specific custom field values, validated against its Product's template. Requires ``product:manage``."""
+    setup = setup_service.get_by_id(setup_id)
+    values = template_service.set_setup_values(setup_id, setup.product_id, payload.values, current_user)
+    return SetupCustomFieldsResponse(setup_id=setup_id, values=values)

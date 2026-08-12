@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 
 from app.api.deps import (
     get_export_service,
@@ -21,30 +22,41 @@ from app.api.deps import (
     get_reservation_service,
     get_setup_service,
     get_swap_service,
+    get_template_service,
+    get_user_service,
 )
-from app.core.constants import AnnouncementChannel, PermissionCode, ReservationStatus, SetupStatus
+from app.core.constants import AnnouncementChannel, PermissionCode, ReservationStatus, SetupStatus, UserStatus
 from app.core.exceptions import AppError
 from app.models.reservation import Reservation
 from app.models.user import User
 from app.schemas.reservation import ReservationCreateRequest, ReservationFilter
-from app.schemas.setup import SetupFilter
+from app.schemas.setup import SetupFilter, SetupUpdateRequest
 from app.schemas.swap_request import SwapCreateRequest
+from app.schemas.user import UserFilter
 from app.services.export_service import ExportService
 from app.services.group_service import GroupService
 from app.services.product_service import ProductService
 from app.services.reservation_service import ReservationService
 from app.services.setup_service import SetupService
 from app.services.swap_service import SwapService
+from app.services.template_service import TemplateService
+from app.services.user_service import UserService
 from app.utils.pagination import total_pages as compute_total_pages
 from app.web.deps import base_context, get_current_web_user, require_web_permission, templates
 
 router = APIRouter(tags=["Web - Setups"])
 
 
-def _build_rows(setups: List, current_user: User, reservation_service: ReservationService) -> List[Dict]:
+def _build_rows(
+    setups: List,
+    current_user: User,
+    reservation_service: ReservationService,
+    custom_values_by_setup: Optional[Dict[int, Dict]] = None,
+) -> List[Dict]:
     """Join a page of Setups against active Reservations to build display rows."""
     active_reservations: List[Reservation] = reservation_service.list_all(ReservationFilter(status=ReservationStatus.ACTIVE))
     reservation_by_setup_id = {r.setup_id: r for r in active_reservations}
+    custom_values_by_setup = custom_values_by_setup or {}
 
     rows = []
     for setup in setups:
@@ -56,6 +68,7 @@ def _build_rows(setups: List, current_user: User, reservation_service: Reservati
                 "reservation": reservation,
                 "is_mine": is_mine,
                 "checkbox_enabled": setup.status == SetupStatus.AVAILABLE or is_mine,
+                "custom_values": custom_values_by_setup.get(setup.id, {}),
             }
         )
     return rows
@@ -69,9 +82,23 @@ def _load_table_context(
     current_user: User,
     setup_service: SetupService,
     reservation_service: ReservationService,
+    template_service: Optional[TemplateService] = None,
 ) -> dict:
     setups, total_items = setup_service.list(filters, page, page_size)
-    rows = _build_rows(setups, current_user, reservation_service)
+
+    # The table only renders a single product's custom columns when the view
+    # is scoped to exactly one Product (its template is otherwise ambiguous
+    # across products with different columns) -- see "Dynamic Frontend Table".
+    custom_columns = []
+    custom_values_by_setup: Dict[int, Dict] = {}
+    if template_service is not None and filters.product_id is not None:
+        custom_columns = template_service.get_custom_columns(filters.product_id)
+        if setups:
+            custom_values_by_setup = template_service.get_values_map_for_setups(
+                [s.id for s in setups], filters.product_id
+            )
+
+    rows = _build_rows(setups, current_user, reservation_service, custom_values_by_setup)
     context = base_context(request, current_user)
     context.update(
         {
@@ -81,6 +108,7 @@ def _load_table_context(
             "total_items": total_items,
             "total_pages": compute_total_pages(total_items, page_size),
             "filters": filters,
+            "custom_columns": custom_columns,
         }
     )
     return context
@@ -101,10 +129,13 @@ def setups_page(
     reservation_service: ReservationService = Depends(get_reservation_service),
     product_service: ProductService = Depends(get_product_service),
     group_service: GroupService = Depends(get_group_service),
+    template_service: TemplateService = Depends(get_template_service),
 ):
     """Render the full reservation table screen (initial page load)."""
     filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location, search=search)
-    context = _load_table_context(request, filters, page, page_size, current_user, setup_service, reservation_service)
+    context = _load_table_context(
+        request, filters, page, page_size, current_user, setup_service, reservation_service, template_service
+    )
     products, _ = product_service.list(page=1, page_size=200)
     groups, _ = group_service.list(page=1, page_size=200)
     context.update({"products": products, "groups": groups})
@@ -124,10 +155,13 @@ def setups_table_partial(
     current_user: User = Depends(get_current_web_user),
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
+    template_service: TemplateService = Depends(get_template_service),
 ):
     """HTMX partial: re-render just the table body + pagination on filter/search/page change."""
     filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location, search=search)
-    context = _load_table_context(request, filters, page, page_size, current_user, setup_service, reservation_service)
+    context = _load_table_context(
+        request, filters, page, page_size, current_user, setup_service, reservation_service, template_service
+    )
     return templates.TemplateResponse("setups/_table_body.html", context)
 
 
@@ -307,6 +341,94 @@ def export_setups_web(
         filename=export_log.file_path.split("/")[-1],
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+@router.get("/setups/{setup_id}/edit-form")
+def setup_edit_form(
+    request: Request,
+    setup_id: int,
+    current_user: User = Depends(require_web_permission(PermissionCode.PRODUCT_MANAGE)),
+    setup_service: SetupService = Depends(get_setup_service),
+    group_service: GroupService = Depends(get_group_service),
+    user_service: UserService = Depends(get_user_service),
+    template_service: TemplateService = Depends(get_template_service),
+):
+    """Render the Edit Setup modal, including this setup's product-specific custom fields."""
+    setup = setup_service.get_by_id(setup_id)
+    groups, _ = group_service.list(page=1, page_size=200)
+    owners, _ = user_service.list(UserFilter(status=UserStatus.APPROVED), page=1, page_size=500)
+    custom_columns = template_service.get_custom_columns(setup.product_id)
+    custom_values = template_service.get_values_map_for_setup(setup_id, setup.product_id) if custom_columns else {}
+
+    context = base_context(request, current_user)
+    context.update(
+        {
+            "setup": setup, "groups": groups, "owners": owners, "statuses": SetupStatus.ALL,
+            "custom_columns": custom_columns, "custom_values": custom_values,
+        }
+    )
+    return templates.TemplateResponse("setups/_setup_edit_modal.html", context)
+
+
+@router.post("/setups/{setup_id}/save")
+async def setup_edit_save(
+    request: Request,
+    setup_id: int,
+    current_user: User = Depends(require_web_permission(PermissionCode.PRODUCT_MANAGE)),
+    setup_service: SetupService = Depends(get_setup_service),
+    reservation_service: ReservationService = Depends(get_reservation_service),
+    template_service: TemplateService = Depends(get_template_service),
+):
+    """Update a Setup's fields (and its product's custom template field values), then re-render the table."""
+    form = await request.form()
+    message, message_type = "Setup updated successfully.", "success"
+    try:
+        setup = setup_service.get_by_id(setup_id)
+        payload = SetupUpdateRequest(
+            group_id=int(form["group_id"]) if form.get("group_id") else None,
+            owner_id=int(form["owner_id"]) if form.get("owner_id") else None,
+            ip_address=form.get("ip_address") or None,
+            hostname=form.get("hostname") or None,
+            ssd=form.get("ssd") or None,
+            hdd=form.get("hdd") or None,
+            hardware_info=form.get("hardware_info") or None,
+            capacity=form.get("capacity") or None,
+            form_factor=form.get("form_factor") or None,
+            adapter=form.get("adapter") or None,
+            aardvark=form.get("aardvark") or None,
+            quarch=form.get("quarch") or None,
+            apc=form.get("apc") or None,
+            remote_server=form.get("remote_server") or None,
+            location=form.get("location") or None,
+            remarks=form.get("remarks") or None,
+            status=form.get("status") or None,
+        )
+        setup_service.update(setup_id, payload, current_user)
+
+        custom_columns = template_service.get_custom_columns(setup.product_id)
+        if custom_columns:
+            raw_values: Dict[str, object] = {}
+            for column in custom_columns:
+                field_name = "custom_" + column.name
+                if field_name in form:
+                    if column.data_type == "BOOLEAN":
+                        raw_values[column.name] = field_name in form  # checkbox present == checked
+                    else:
+                        raw_values[column.name] = form.get(field_name)
+            if raw_values:
+                template_service.set_setup_values(setup_id, setup.product_id, raw_values, current_user)
+    except AppError as exc:
+        message, message_type = exc.message, "error"
+    except ValidationError as exc:
+        message, message_type = "; ".join(err["msg"] for err in exc.errors()), "error"
+    except (ValueError, KeyError) as exc:
+        message, message_type = str(exc), "error"
+
+    filters = SetupFilter()
+    context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
+    response = templates.TemplateResponse("setups/_table_body.html", context)
+    response.headers["HX-Trigger"] = _toast_trigger(message, message_type)
+    return response
 
 
 def _toast_trigger(message: str, message_type: str) -> str:

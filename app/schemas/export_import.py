@@ -41,6 +41,11 @@ class ImportResultResponse(BaseModel):
     error_count: int
     errors: List[ImportRowError] = []
     committed: bool
+    # Populated only by the product-template-aware import flow: Excel columns
+    # found in the workbook that are not yet part of the product's template.
+    # When non-empty and ``committed`` is False, the caller must explicitly
+    # accept (or reject) adding these columns before the import can proceed.
+    new_columns: List[str] = []
 
 
 class SetupExportFilter(BaseModel):

@@ -5,6 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.group import Group
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.user import UserFilter
@@ -80,3 +81,15 @@ class UserRepository:
             self._db.rollback()
             return False
         return True
+
+    def set_groups(self, user: User, group_ids: List[int]) -> User:
+        """Replace a user's group memberships (the many-to-many ``groups`` set) with exactly the given ids."""
+        if group_ids:
+            groups = self._db.query(Group).filter(Group.id.in_(group_ids)).all()
+        else:
+            groups = []
+        user.groups = groups
+        self._db.add(user)
+        self._db.flush()
+        self._db.refresh(user)
+        return user

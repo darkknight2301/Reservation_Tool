@@ -1,6 +1,6 @@
 """Pydantic schemas for the User resource, registration, and approval workflow."""
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, Field, validator
 
@@ -15,6 +15,10 @@ class UserRegisterRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     full_name: str = Field(..., min_length=1, max_length=150)
     group_id: Optional[int] = None
+    # Every Group the user should belong to (in addition to/including their
+    # primary ``group_id``). When provided, this is the full membership set
+    # -- omit it (leave as None) to make no change to group membership.
+    group_ids: Optional[List[int]] = None
 
     @validator("password")
     def _validate_password_strength(cls, value: str) -> str:  # noqa: N805
@@ -37,6 +41,7 @@ class UserCreateRequest(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=150)
     role_name: str = Field(default=RoleName.USER)
     group_id: Optional[int] = None
+    group_ids: Optional[List[int]] = None
 
     @validator("role_name")
     def _validate_role(cls, value: str) -> str:  # noqa: N805
@@ -51,6 +56,7 @@ class UserUpdateRequest(BaseModel):
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=150)
     role_name: Optional[str] = None
     group_id: Optional[int] = None
+    group_ids: Optional[List[int]] = None
     is_active: Optional[bool] = None
 
     @validator("role_name")
@@ -115,6 +121,7 @@ class UserResponse(BaseModel):
     is_active: bool
     role: RoleResponse
     group: Optional[GroupSummaryResponse] = None
+    groups: List[GroupSummaryResponse] = []
     approved_by_id: Optional[int] = None
     approved_at: Optional[datetime] = None
     created_at: datetime

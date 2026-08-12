@@ -1,0 +1,52 @@
+{% if import_error %}
+<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-circle me-1"></i>{{ import_error }}</div>
+{% elif token %}
+<div class="alert alert-info mb-2">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>New columns detected</strong> in the uploaded workbook that aren't part of {{ "this product's" }} template yet:
+</div>
+<ul class="mb-3">
+    {% for col in result.new_columns %}
+    <li><code>{{ col }}</code></li>
+    {% endfor %}
+</ul>
+<div class="d-flex gap-2">
+    <button type="button" class="btn btn-primary btn-sm"
+            hx-post="/admin/products/{{ product_id }}/template/import/confirm"
+            hx-vals='{"token": "{{ token }}", "accept": "true"}'
+            hx-target="#productImportResult" hx-swap="innerHTML">
+        <i class="bi bi-check-lg me-1"></i>Add to Template &amp; Import
+    </button>
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            hx-post="/admin/products/{{ product_id }}/template/import/confirm"
+            hx-vals='{"token": "{{ token }}", "accept": "false"}'
+            hx-target="#productImportResult" hx-swap="innerHTML">
+        <i class="bi bi-x-lg me-1"></i>Reject Import
+    </button>
+</div>
+{% elif result %}
+    {% if result.committed %}
+    <div class="alert alert-success mb-0">
+        <i class="bi bi-check-circle me-1"></i>
+        Import complete: <strong>{{ result.created_count }}</strong> created, <strong>{{ result.updated_count }}</strong> updated
+        out of {{ result.total_rows }} row(s).
+    </div>
+    {% else %}
+    <div class="alert alert-warning mb-2">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Import rejected: <strong>{{ result.error_count }}</strong> row error(s) found. No rows were committed.
+    </div>
+    <div class="rms-table-wrapper" style="max-height: 240px;">
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
+            <tbody>
+                {% for err in result.errors %}
+                <tr><td>{{ err.row }}</td><td>{{ err.field or "—" }}</td><td>{{ err.message }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+{% else %}
+<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-triangle me-1"></i>New columns were not added; nothing was imported.</div>
+{% endif %}

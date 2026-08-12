@@ -69,7 +69,7 @@ reservation-system/
 │   └── middleware/                 # Correlation-ID/access-log middleware, global exception handlers
 ├── alembic/                        # Migration environment + versioned migrations
 ├── scripts/                        # create_admin.py, seed_data.py (one-shot management scripts)
-├── deploy/                         # gunicorn_conf.py, nginx.conf, systemd unit, backup/restore/startup/shutdown
+├── deploy/                         # gunicorn_conf.py, apache.conf, systemd unit, backup/restore/startup/shutdown
 ├── tests/                          # unit/{services,repositories}, integration/api (scaffolded, see Testing)
 ├── logs/                           # Runtime: app.log, exports/, excel_logs/ (all git-ignored)
 ├── requirements.txt / .env.example / alembic.ini
@@ -83,7 +83,7 @@ reservation-system/
 
 ## Security
 
-- **Transport**: TLS terminated at Nginx; the app process only listens on a unix socket / localhost — see `deploy/nginx.conf`.
+- **Transport**: TLS terminated at Apache; the app process only listens on a unix socket / localhost — see `deploy/apache.conf`. Access is restricted to the internal network via Apache's `Require ip` allow-list (no separate firewall script is shipped with this project; an OS-level firewall is still recommended as defense in depth but is left to your own infrastructure standards).
 - **AuthN**: JWT access + refresh token pair (`app/core/security.py`). API clients use `Authorization: Bearer <token>`; the browser uses HttpOnly, `SameSite=Strict`, `Secure` (in non-debug) cookies (`app/web/routers/auth_view.py`). Refresh tokens are tracked server-side (`refresh_tokens` table) and rotated on every use (single-use), so logout/deactivation revokes access immediately rather than waiting for token expiry.
 - **AuthZ**: every protected endpoint depends on `require_permission(code)` (API) or `require_web_permission(code)` (web), which checks the current user's role against the seeded `role_permissions` mapping — never a hardcoded `if role == "X"`. Record-level nuance (e.g. "a LEAD may only approve users in their own Group") is enforced inside the relevant service method, not the route.
 - **Passwords**: bcrypt via `passlib`, cost factor from `BCRYPT_ROUNDS`. Never logged, never returned in any response.

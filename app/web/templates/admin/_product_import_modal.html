@@ -1,0 +1,33 @@
+<div class="modal fade" id="productImportModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form hx-post="/admin/products/{{ product.id }}/template/import" hx-target="#productImportResult" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-arrow-up me-2"></i>Import Setups for {{ product.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">
+                        Upload an <code>.xlsx</code> workbook. Every column is validated against
+                        <strong>{{ product.name }}</strong>'s current template. Columns not yet in the template will
+                        be flagged so you can choose to add them or reject the import.
+                    </p>
+                    <input type="file" class="form-control" name="file" accept=".xlsx" required>
+                    <div id="productImportResult" class="mt-3"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-upload me-1"></i>Upload &amp; Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("productImportModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+    })();
+</script>

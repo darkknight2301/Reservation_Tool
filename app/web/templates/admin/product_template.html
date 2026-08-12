@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Design Template - {{ product.name }} - Reservation System{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-0"><i class="bi bi-layout-text-sidebar-reverse me-2"></i>Design Template</h4>
+        <div class="text-muted small">{{ product.name }}</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/products"><i class="bi bi-arrow-left me-1"></i>Back to Products</a>
+        <button class="btn btn-outline-primary btn-sm" hx-get="/admin/products/{{ product.id }}/template/import-dialog"
+                hx-target="#dialogContainer" hx-swap="innerHTML">
+            <i class="bi bi-file-earmark-arrow-up me-1"></i>Import Excel
+        </button>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/products/{{ product.id }}/export">
+            <i class="bi bi-file-earmark-excel me-1"></i>Export
+        </a>
+        <button class="btn btn-primary btn-sm" hx-get="/admin/products/{{ product.id }}/template/column-form"
+                hx-target="#dialogContainer" hx-swap="innerHTML">
+            <i class="bi bi-plus-lg me-1"></i>Add Custom Column
+        </button>
+    </div>
+</div>
+
+<div class="card rms-card mb-3">
+    <div class="card-body py-2">
+        <p class="small text-muted mb-0">
+            Every product always has the 8 mandatory columns below -- they can't be renamed, reordered, or removed.
+            Add product-specific columns underneath to build this product's table/template. The Setup table and
+            Excel import/export for this product will use this template.
+        </p>
+    </div>
+</div>
+
+<div id="templateColumnsContainer">
+    {% include "admin/_product_template_columns.html" %}
+</div>
+<div id="dialogContainer"></div>
+{% endblock %}

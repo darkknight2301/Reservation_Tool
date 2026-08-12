@@ -1,0 +1,72 @@
+<div class="modal fade" id="templateColumnModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form hx-post="/admin/products/{{ product_id }}/template/save" hx-target="#templateColumnsContainer" hx-swap="innerHTML">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-layout-text-sidebar-reverse me-2"></i>{{ "Edit" if column else "Add" }} Custom Column</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="column_id" value="{{ column.id if column else '' }}">
+                    <div class="mb-2">
+                        <label class="form-label small">Column Name (key, used in Excel header)</label>
+                        <input type="text" class="form-control" name="name" value="{{ column.name if column else '' }}"
+                               required maxlength="100" {% if column %}readonly{% endif %}>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Display Label</label>
+                        <input type="text" class="form-control" name="label" value="{{ column.label if column else '' }}" maxlength="150">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Type</label>
+                        <select class="form-select" name="data_type" id="templateColumnType" {% if column %}disabled{% endif %}>
+                            {% for t in column_types %}
+                            <option value="{{ t }}" {% if column and column.data_type == t %}selected{% endif %}>{{ t|title }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if column %}<input type="hidden" name="data_type" value="{{ column.data_type }}">
+                        <div class="form-text">Type can't be changed after creation -- delete and re-add instead.</div>{% endif %}
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="required" value="true" id="templateColumnRequired"
+                               {% if column and column.required %}checked{% endif %}>
+                        <label class="form-check-label small" for="templateColumnRequired">Required</label>
+                    </div>
+                    <div class="mb-2" id="templateColumnDefaultWrap">
+                        <label class="form-label small">Default Value (optional)</label>
+                        <input type="text" class="form-control" name="default_value" value="{{ column.default_value if column else '' }}" maxlength="500">
+                    </div>
+                    <div class="mb-2" id="templateColumnAllowedWrap">
+                        <label class="form-label small">Allowed Values (comma-separated, Dropdown only)</label>
+                        <input type="text" class="form-control" name="allowed_values"
+                               value="{{ column.allowed_values|join(', ') if column and column.allowed_values else '' }}"
+                               placeholder="SSD, HDD, NVMe">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("templateColumnModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+
+        var typeSelect = document.getElementById("templateColumnType");
+        var allowedWrap = document.getElementById("templateColumnAllowedWrap");
+        function syncAllowedVisibility() {
+            var isDropdown = typeSelect && typeSelect.value === "DROPDOWN";
+            allowedWrap.style.display = isDropdown ? "" : "none";
+        }
+        if (typeSelect) {
+            typeSelect.addEventListener("change", syncAllowedVisibility);
+        }
+        syncAllowedVisibility();
+    })();
+</script>

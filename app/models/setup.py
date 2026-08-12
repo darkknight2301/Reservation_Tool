@@ -51,6 +51,9 @@ class Setup(Base):
     group = relationship("Group", back_populates="setups")
     owner = relationship("User", foreign_keys=[owner_id])
     reservations = relationship("Reservation", back_populates="setup")
+    custom_field_values = relationship(
+        "SetupCustomFieldValue", back_populates="setup", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only
         return "<Setup id={0} hostname={1} status={2}>".format(self.id, self.hostname, self.status)

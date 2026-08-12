@@ -23,7 +23,8 @@ class Group(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
-    users = relationship("User", back_populates="group")
+    users = relationship("User", back_populates="group", foreign_keys="User.group_id")
+    members = relationship("User", secondary="user_groups", back_populates="groups")
     setups = relationship("Setup", back_populates="group")
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only

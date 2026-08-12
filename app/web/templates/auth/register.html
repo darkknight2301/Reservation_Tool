@@ -32,6 +32,15 @@
                     <input type="password" class="form-control" id="password" name="password" required minlength="8">
                     <div class="form-text">At least 8 characters, with an uppercase letter, a lowercase letter, and a digit.</div>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label" for="group_ids">Groups</label>
+                    <select class="form-select" id="group_ids" name="group_ids" multiple size="4">
+                        {% for group in groups %}
+                        <option value="{{ group.id }}">{{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Optional. Hold Ctrl (Cmd on Mac) to select more than one.</div>
+                </div>
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-person-plus me-1"></i>Register</button>
             </form>
 

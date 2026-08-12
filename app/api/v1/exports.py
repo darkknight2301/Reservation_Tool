@@ -47,6 +47,25 @@ def export_setups_template(
     )
 
 
+@router.post("/setups/product/{product_id}")
+def export_setups_for_product(
+    product_id: int,
+    current_user: User = Depends(require_permission(PermissionCode.EXPORT_RUN)),
+    export_service: ExportService = Depends(get_export_service),
+) -> FileResponse:
+    """
+    Export every Setup for a single Product using that Product's CURRENT
+    template (mandatory + custom columns, in template order). Requires
+    ``export:run``.
+    """
+    export_log = export_service.export_setups_for_product(product_id, current_user)
+    return FileResponse(
+        path=export_log.file_path,
+        filename=export_log.file_path.split("/")[-1],
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @router.post("/reservations")
 def export_reservations(
     user_id: Optional[int] = None,

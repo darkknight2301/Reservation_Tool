@@ -7,7 +7,11 @@ services:
     container_name: reservation-system-app
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      # Bound to localhost only: Apache on the host (deploy/apache.conf) terminates
+      # TLS and enforces the intranet-only allow-list, then proxies here.
+      # Do NOT change this to "8000:8000" / "0.0.0.0:8000:8000" - that would
+      # expose the app directly, bypassing both TLS and the network allow-list.
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:

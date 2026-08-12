@@ -1,0 +1,159 @@
+<div class="modal fade" id="setupEditModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form hx-post="/setups/{{ setup.id }}/save" hx-target="#setupsTableContainer" hx-swap="innerHTML"
+                  hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('setupEditModal')).hide(); }">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Edit Setup -- {{ setup.hostname }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label small">Product</label>
+                            <input type="text" class="form-control" value="{{ setup.product.name if setup.product else '—' }}" disabled>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Status</label>
+                            <select class="form-select" name="status">
+                                {% for s in statuses %}
+                                <option value="{{ s }}" {% if setup.status == s %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Group</label>
+                            <select class="form-select" name="group_id">
+                                <option value="">None</option>
+                                {% for g in groups %}
+                                <option value="{{ g.id }}" {% if setup.group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">IP Address</label>
+                            <input type="text" class="form-control" name="ip_address" value="{{ setup.ip_address }}" required maxlength="45">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Hostname</label>
+                            <input type="text" class="form-control" name="hostname" value="{{ setup.hostname }}" required maxlength="255">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Owner</label>
+                            <select class="form-select" name="owner_id">
+                                <option value="">None</option>
+                                {% for owner in owners %}
+                                <option value="{{ owner.id }}" {% if setup.owner_id == owner.id %}selected{% endif %}>{{ owner.full_name }} ({{ owner.username }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Location</label>
+                            <input type="text" class="form-control" name="location" value="{{ setup.location }}" required maxlength="255">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label small">Form Factor</label>
+                            <input type="text" class="form-control" name="form_factor" value="{{ setup.form_factor or '' }}" maxlength="50">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Capacity</label>
+                            <input type="text" class="form-control" name="capacity" value="{{ setup.capacity or '' }}" maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Adapter</label>
+                            <input type="text" class="form-control" name="adapter" value="{{ setup.adapter or '' }}" maxlength="100">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <label class="form-label small">SSD</label>
+                            <input type="text" class="form-control" name="ssd" value="{{ setup.ssd or '' }}" maxlength="100">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">HDD</label>
+                            <input type="text" class="form-control" name="hdd" value="{{ setup.hdd or '' }}" maxlength="100">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Aardvark</label>
+                            <input type="text" class="form-control" name="aardvark" value="{{ setup.aardvark or '' }}" maxlength="100">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Quarch</label>
+                            <input type="text" class="form-control" name="quarch" value="{{ setup.quarch or '' }}" maxlength="100">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <label class="form-label small">APC</label>
+                            <input type="text" class="form-control" name="apc" value="{{ setup.apc or '' }}" maxlength="100">
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label small">Remote Server</label>
+                            <input type="text" class="form-control" name="remote_server" value="{{ setup.remote_server or '' }}" maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Hardware Info</label>
+                            <input type="text" class="form-control" name="hardware_info" value="{{ setup.hardware_info or '' }}" maxlength="500">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Remarks</label>
+                        <textarea class="form-control" name="remarks" rows="2" maxlength="1000">{{ setup.remarks or '' }}</textarea>
+                    </div>
+
+                    {% if custom_columns %}
+                    <hr>
+                    <h6 class="text-muted small text-uppercase mb-2">{{ setup.product.name }} Custom Fields</h6>
+                    <div class="row g-2">
+                        {% for col in custom_columns %}
+                        <div class="col-md-6">
+                            <label class="form-label small">{{ col.label }}{% if col.required %} *{% endif %}</label>
+                            {% if col.data_type == "DROPDOWN" %}
+                            <select class="form-select" name="custom_{{ col.name }}" {% if col.required %}required{% endif %}>
+                                <option value="">—</option>
+                                {% for opt in col.allowed_values %}
+                                <option value="{{ opt }}" {% if custom_values.get(col.name) == opt %}selected{% endif %}>{{ opt }}</option>
+                                {% endfor %}
+                            </select>
+                            {% elif col.data_type == "BOOLEAN" %}
+                            <div class="form-check mt-1">
+                                <input type="checkbox" class="form-check-input" name="custom_{{ col.name }}" value="true"
+                                       {% if custom_values.get(col.name) == "True" %}checked{% endif %}>
+                            </div>
+                            {% elif col.data_type == "DATE" %}
+                            <input type="date" class="form-control" name="custom_{{ col.name }}" value="{{ custom_values.get(col.name) or '' }}" {% if col.required %}required{% endif %}>
+                            {% elif col.data_type == "DATETIME" %}
+                            <input type="datetime-local" class="form-control" name="custom_{{ col.name }}" value="{{ custom_values.get(col.name) or '' }}" {% if col.required %}required{% endif %}>
+                            {% elif col.data_type in ("INTEGER", "FLOAT") %}
+                            <input type="number" {% if col.data_type == "FLOAT" %}step="any"{% endif %} class="form-control"
+                                   name="custom_{{ col.name }}" value="{{ custom_values.get(col.name) or '' }}" {% if col.required %}required{% endif %}>
+                            {% else %}
+                            <input type="text" class="form-control" name="custom_{{ col.name }}" value="{{ custom_values.get(col.name) or '' }}" {% if col.required %}required{% endif %}>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("setupEditModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+    })();
+</script>

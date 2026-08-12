@@ -14,5 +14,14 @@ ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 
+# Process/OS-level hardening (defense in depth; the app itself only ever
+# binds a unix socket, never a public TCP port - see deploy/gunicorn_conf.py).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/reservation-system
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
 [Install]
 WantedBy=multi-user.target

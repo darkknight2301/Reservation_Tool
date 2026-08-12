@@ -38,13 +38,14 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Group</label>
-                            <select class="form-select" name="group_id">
-                                <option value="">None</option>
+                            <label class="form-label small">Groups</label>
+                            <select class="form-select" name="group_ids" multiple size="4">
+                                {% set edited_group_ids = (edited_user.groups|map(attribute='id')|list) if edited_user else [] %}
                                 {% for g in groups %}
-                                <option value="{{ g.id }}" {% if edited_user and edited_user.group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                <option value="{{ g.id }}" {% if g.id in edited_group_ids %}selected{% endif %}>{{ g.name }}</option>
                                 {% endfor %}
                             </select>
+                            <div class="form-text">Hold Ctrl/Cmd to select more than one. First selected is the primary group.</div>
                         </div>
                     </div>
                     {% if edited_user %}

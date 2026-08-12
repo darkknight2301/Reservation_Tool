@@ -2,10 +2,11 @@
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
 from app.core.constants import AuditAction, ExportType
+from app.core.exceptions import ValidationAppError
 from app.models.excel_transaction_log import ExcelTransactionLog
 from app.models.export_log import ExportLog
 from app.models.user import User
@@ -15,6 +16,7 @@ from app.repositories.interfaces.i_setup_repository import ISetupRepository
 from app.schemas.reservation import ReservationFilter
 from app.schemas.setup import SetupFilter
 from app.services.audit_service import AuditService
+from app.services.template_service import TemplateService
 from app.utils.excel_log_rotator import append_excel_transactions
 from app.utils.excel_reader import SETUP_IMPORT_COLUMNS
 from app.utils.excel_writer import build_export_context, write_excel_workbook
@@ -38,11 +40,13 @@ class ExportService:
         setup_repository: ISetupRepository,
         reservation_repository: IReservationRepository,
         audit_service: AuditService,
+        template_service: Optional[TemplateService] = None,
     ) -> None:
         self._export_repository = export_repository
         self._setup_repository = setup_repository
         self._reservation_repository = reservation_repository
         self._audit_service = audit_service
+        self._template_service = template_service
 
     def _finalize(
         self, export_type: str, file_path: str, filters: Dict[str, Any], row_count: int, acting_user: User
@@ -139,6 +143,53 @@ class ExportService:
         return self._finalize(
             ExportType.RESERVATIONS, file_path, filters.dict(exclude_none=True), len(rows), acting_user
         )
+
+    def export_setups_for_product(self, product_id: int, acting_user: User) -> ExportLog:
+        """
+        Export every Setup for a single Product using that Product's CURRENT
+        dynamic template: mandatory columns followed by the product's custom
+        columns, in template order, with each row's custom field values
+        merged in. Falls back to an empty, import-ready template (using the
+        same dynamic header set) when the product has no setups yet.
+        """
+        if self._template_service is None:
+            raise ValidationAppError("Template-aware export is not configured.")
+
+        filters = SetupFilter(product_id=product_id)
+        setups = self._setup_repository.list_all(filters)
+        custom_columns = self._template_service.get_custom_columns(product_id)
+        custom_names = [col.name for col in custom_columns]
+        headers = list(_SETUP_HEADERS) + custom_names
+
+        os.makedirs(settings.EXPORT_DIR, exist_ok=True)
+        file_name = "setups_product{0}_{1}_{2}.xlsx".format(
+            product_id, datetime.utcnow().strftime("%Y%m%dT%H%M%S"), uuid.uuid4().hex[:8]
+        )
+        file_path = os.path.join(settings.EXPORT_DIR, file_name)
+        context = build_export_context(acting_user.username, datetime.utcnow(), {"product_id": product_id}, len(setups))
+
+        if setups:
+            values_by_setup = self._template_service.get_values_map_for_setups(
+                [s.id for s in setups], product_id
+            )
+            rows: List[List[Any]] = []
+            for setup in setups:
+                base_row = [
+                    setup.id, setup.product_id, setup.group_id, setup.ip_address, setup.hostname,
+                    setup.ssd, setup.hdd, setup.hardware_info, setup.capacity, setup.form_factor,
+                    setup.owner_id, setup.adapter, setup.aardvark, setup.quarch, setup.apc,
+                    setup.remote_server, setup.location, setup.remarks, setup.status,
+                ]
+                custom_values = values_by_setup.get(setup.id, {})
+                base_row.extend(custom_values.get(name) for name in custom_names)
+                rows.append(base_row)
+            context["Note"] = "Full export using the current product template."
+            write_excel_workbook(headers, rows, "Setups", context, file_path)
+        else:
+            context["Note"] = "No Setups found for this Product -- empty import template generated instead."
+            write_excel_workbook(SETUP_IMPORT_COLUMNS + custom_names, [], "Template", context, file_path)
+
+        return self._finalize(ExportType.SETUPS, file_path, {"product_id": product_id}, len(setups), acting_user)
 
     def generate_setup_template(self, acting_user: User) -> ExportLog:
         """Explicitly generate an empty, import-ready Setup template (e.g. for a brand-new Product)."""

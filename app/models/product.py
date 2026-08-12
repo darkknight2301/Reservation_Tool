@@ -17,6 +17,10 @@ class Product(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     setups = relationship("Setup", back_populates="product")
+    template_columns = relationship(
+        "ProductTemplateColumn", back_populates="product", cascade="all, delete-orphan",
+        order_by="ProductTemplateColumn.order_index",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only
         return "<Product id={0} name={1}>".format(self.id, self.name)

@@ -21,6 +21,7 @@ from app.repositories.sqlalchemy.reservation_repository import ReservationReposi
 from app.repositories.sqlalchemy.role_repository import RoleRepository
 from app.repositories.sqlalchemy.setup_repository import SetupRepository
 from app.repositories.sqlalchemy.swap_repository import SwapRepository
+from app.repositories.sqlalchemy.template_repository import TemplateRepository
 from app.repositories.sqlalchemy.user_repository import UserRepository
 from app.services.announcement_service import AnnouncementService
 from app.services.audit_service import AuditService
@@ -36,6 +37,7 @@ from app.services.reservation_service import ReservationService
 from app.services.role_lookup_service import RoleLookupService
 from app.services.setup_service import SetupService
 from app.services.swap_service import SwapService
+from app.services.template_service import TemplateService
 from app.services.user_service import UserService
 
 
@@ -83,6 +85,10 @@ def get_audit_repository(db: Session = Depends(get_db)) -> AuditLogRepository:
 
 def get_export_repository(db: Session = Depends(get_db)) -> ExportRepository:
     return ExportRepository(db)
+
+
+def get_template_repository(db: Session = Depends(get_db)) -> TemplateRepository:
+    return TemplateRepository(db)
 
 
 # --- Service providers -----------------------------------------------------
@@ -151,6 +157,14 @@ def get_setup_service(
     return SetupService(setup_repository, audit_service)
 
 
+def get_template_service(
+    template_repository: TemplateRepository = Depends(get_template_repository),
+    product_repository: ProductRepository = Depends(get_product_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> TemplateService:
+    return TemplateService(template_repository, product_repository, audit_service)
+
+
 def get_reservation_service(
     reservation_repository: ReservationRepository = Depends(get_reservation_repository),
     setup_repository: SetupRepository = Depends(get_setup_repository),
@@ -183,8 +197,11 @@ def get_export_service(
     setup_repository: SetupRepository = Depends(get_setup_repository),
     reservation_repository: ReservationRepository = Depends(get_reservation_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    template_service: TemplateService = Depends(get_template_service),
 ) -> ExportService:
-    return ExportService(export_repository, setup_repository, reservation_repository, audit_service)
+    return ExportService(
+        export_repository, setup_repository, reservation_repository, audit_service, template_service
+    )
 
 
 def get_import_service(
@@ -194,9 +211,11 @@ def get_import_service(
     user_repository: UserRepository = Depends(get_user_repository),
     export_repository: ExportRepository = Depends(get_export_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    template_service: TemplateService = Depends(get_template_service),
 ) -> ImportService:
     return ImportService(
-        setup_repository, product_repository, group_repository, user_repository, export_repository, audit_service
+        setup_repository, product_repository, group_repository, user_repository, export_repository, audit_service,
+        template_service,
     )
 
 

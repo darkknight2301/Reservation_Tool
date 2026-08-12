@@ -29,6 +29,25 @@ Visit `http://localhost:8000/login` (web UI) or `http://localhost:8000/docs` (AP
 
 `USER` < `DEVELOPER` < `LEAD` < `DEVELOPER_LEAD` < `OWNER` — see DEVELOPER_GUIDE.md §RBAC for the full permission matrix.
 
+## Dynamic Product Templates
+
+Each Product can have its own table/template: a fixed set of mandatory columns
+(IP, User, Owner, Reservation, Remark, Location, Group, Product) plus any
+number of product-specific custom columns (String, Integer, Float, Boolean,
+Date, DateTime, or Dropdown). Authorized users (`product:manage`) design a
+product's template from **Product Management → Template** in the web UI, or
+via the `/api/v1/products/{id}/template` API.
+
+Custom columns are stored as data (`product_template_columns` +
+`setup_custom_field_values`), so adding one never requires a database
+migration. The Setup table, and Excel import/export for a single product, use
+that product's current template automatically. Importing a workbook with
+columns not yet in the template does not silently drop them — the import is
+held and the caller is prompted to "Add to Template & Import" or reject it
+(`POST /api/v1/imports/setups/product/{id}/detect-columns` and
+`POST /api/v1/imports/setups/product/{id}?accept_new_columns=true|false`).
+Product-scoped export: `POST /api/v1/exports/setups/product/{id}`.
+
 ## License / Ownership
 
 Internal enterprise deployment. No external distribution license included by default.

@@ -37,6 +37,7 @@ class User(Base):
 
     role = relationship("Role", back_populates="users", foreign_keys=[role_id])
     group = relationship("Group", back_populates="users", foreign_keys=[group_id])
+    groups = relationship("Group", secondary="user_groups", back_populates="members")
     approved_by = relationship("User", remote_side=[id], foreign_keys=[approved_by_id])
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only

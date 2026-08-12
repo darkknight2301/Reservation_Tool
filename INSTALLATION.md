@@ -37,20 +37,21 @@ python -c "import fastapi, sqlalchemy, alembic, pydantic, jose, passlib, openpyx
 ## Linux Deployment (LAN-Only)
 
 This deployment is **not exposed to the public internet**. Access is restricted to your internal
-network at three independent layers, so no single misconfiguration exposes the system externally:
+network via Apache's `Require ip` allow-list (`deploy/apache.conf`), so a request from outside your
+declared subnet(s) is rejected before it ever reaches the application. Edit the CIDR ranges in
+`deploy/apache.conf` (both `<VirtualHost>` blocks) to match your actual internal network before deploying.
 
-1. **Host firewall (primary control)** — `deploy/firewall_setup.sh` configures `ufw` to a default-deny
-   policy and only opens 22/80/443 to the CIDR ranges you supply. Nothing is ever opened to `0.0.0.0/0`.
-2. **Nginx `allow`/`deny` (defense in depth)** — `deploy/nginx.conf` repeats the same internal-network
-   allow-list at the reverse-proxy layer, so even a firewall misconfiguration doesn't expose the app.
-3. **Internal-only DNS/hostname** — give the server an internal-only name (e.g. `reservation-system.internal`
-   via `/etc/hosts` or an internal DNS zone); never register a publicly resolvable domain for it.
+An OS-level firewall (e.g. `ufw`/`firewalld`) is still good practice as defense in depth, but is left to
+your own infrastructure standards rather than shipped as part of this project.
 
-The application process itself only ever binds a **unix socket** (`deploy/gunicorn_conf.py`), never a
-public TCP port, so even if the firewall/Nginx layers were bypassed, the app isn't listening on the network directly.
+Additionally:
+- **Internal-only DNS/hostname** — give the server an internal-only name (e.g. `reservation-system.internal`
+  via `/etc/hosts` or an internal DNS zone); never register a publicly resolvable domain for it.
+- The application process itself only ever binds a **unix socket** (`deploy/gunicorn_conf.py`), never a
+  public TCP port, so it isn't reachable at all except through Apache's proxy.
 
 ```
-LAN clients ── Nginx (443, LAN allow-list) ── unix socket ── Gunicorn/Uvicorn workers ── DB
+LAN clients ── Apache (443, Require ip allow-list) ── unix socket ── Gunicorn/Uvicorn workers ── DB
 ```
 
 1. Create a dedicated service user and directory:
@@ -61,34 +62,36 @@ LAN clients ── Nginx (443, LAN allow-list) ── unix socket ── Gunicor
    ```
 2. Deploy the application code to `/opt/reservation-system` and create the venv there (see [Python Setup](#python-setup)).
 3. Place your production `.env` at `/etc/reservation-system/.env` (see [Environment Variables](#environment-variables)) — never commit real secrets to the repo. Set `CORS_ALLOWED_ORIGINS` to your internal hostname only (e.g. `https://reservation-system.internal`), never a public origin.
-4. **Lock down the firewall** to your actual internal subnet(s) — run this before opening anything else:
+4. Install Apache and the modules required by `deploy/apache.conf`:
    ```bash
-   sudo ./deploy/firewall_setup.sh 192.168.1.0/24        # replace with your real LAN CIDR(s)
+   sudo apt-get install apache2 libapache2-mod-proxy-uds
+   sudo a2enmod ssl proxy proxy_http proxy_uds headers rewrite expires
    ```
-   Omit the argument to default to the standard private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) — narrow this to your actual subnet in production rather than relying on the defaults.
 5. Generate a certificate for internal TLS (a public CA cannot issue one for a non-publicly-resolvable name, which is expected here — either use this self-signed script or your organization's internal CA):
    ```bash
    sudo ./deploy/generate_self_signed_cert.sh reservation-system.internal
    ```
-6. Edit `deploy/nginx.conf`'s `allow` directives (both `server` blocks) to match the **same** CIDR(s) you passed to `firewall_setup.sh`, and set `server_name` to your internal hostname.
-7. Install the systemd unit and Nginx config:
+6. Edit `deploy/apache.conf`'s `Require ip` directives (both `<VirtualHost>` blocks) to match your actual internal subnet(s), and set `ServerName` to your internal hostname.
+7. Install the systemd unit and Apache config:
    ```bash
    sudo cp deploy/reservation-system.service /etc/systemd/system/
-   sudo cp deploy/nginx.conf /etc/nginx/sites-available/reservation-system.conf
-   sudo ln -s /etc/nginx/sites-available/reservation-system.conf /etc/nginx/sites-enabled/
+   sudo cp deploy/apache.conf /etc/apache2/sites-available/reservation-system.conf
+   sudo a2ensite reservation-system.conf
+   sudo a2dissite 000-default   # avoid the default vhost catching requests
    sudo systemctl daemon-reload
    sudo systemctl enable --now reservation-system
-   sudo nginx -t && sudo systemctl reload nginx
+   sudo apachectl configtest && sudo systemctl reload apache2
    ```
-8. From a machine **on the LAN**, confirm `curl -sk https://reservation-system.internal/health` returns `{"status": "ok"}`. From a machine **outside** the allowed CIDR(s), confirm the same request times out / is refused (this is the check that actually matters).
+8. From a machine **on the LAN**, confirm `curl -sk https://reservation-system.internal/health` returns `{"status": "ok"}`. From a machine **outside** the allowed CIDR(s), confirm the same request is refused with `403 Forbidden` (this is the check that actually matters).
 
-**Docker Compose users:** `docker-compose.yml` already binds the container's port to `127.0.0.1:8000` only — Nginx on the host is still the thing LAN clients talk to; the container itself is never reachable directly, even from other machines on the LAN. Switch `deploy/nginx.conf`'s `location /` block to `proxy_pass http://127.0.0.1:8000;` (commented alternative already present in the file) instead of the unix-socket line when running via Docker.
+**Docker Compose users:** `docker-compose.yml` already binds the container's port to `127.0.0.1:8000` only — Apache on the host is still the thing LAN clients talk to; the container itself is never reachable directly, even from other machines on the LAN. In `deploy/apache.conf`, comment the unix-socket `<Location />` block and uncomment the `http://127.0.0.1:8000/` alternative already present in the file.
 
 **Do not**, under any circumstances:
 - Port-forward 80/443 from a router/NAT to this host.
 - Set `CORS_ALLOWED_ORIGINS` to `*` or a public domain.
-- Change the Docker port mapping to `0.0.0.0:8000:8000` or `8000:8000` (this bypasses both the firewall's application-layer intent and Nginx's allow-list).
+- Change the Docker port mapping to `0.0.0.0:8000:8000` or `8000:8000` (this bypasses Apache's `Require ip` allow-list entirely).
 - Request a public CA certificate for the internal hostname (a public cert implies public DNS resolution, which defeats the point).
+
 For a container-based deployment instead, see [Docker](#docker).
 
 ---
@@ -246,7 +249,7 @@ docker compose exec app python -m scripts.create_admin
 
 See `Dockerfile` and `docker-compose.yml` at the project root. The compose file mounts a named volume for the SQLite file and a bind mount for `logs/`, so data survives container recreation. Set real values in a `.env` file next to `docker-compose.yml` (loaded automatically by Compose).
 
-`docker-compose.yml` binds the container's port to `127.0.0.1:8000` only — it is **not** reachable from the network directly. Run Nginx on the Docker host per [Linux Deployment (LAN-Only)](#linux-deployment-lan-only) (with `firewall_setup.sh` and the LAN `allow`/`deny` list) to actually expose it to LAN clients; do not change the compose port mapping to `0.0.0.0:8000:8000`.
+`docker-compose.yml` binds the container's port to `127.0.0.1:8000` only — it is **not** reachable from the network directly. Run Apache on the Docker host per [Linux Deployment (LAN-Only)](#linux-deployment-lan-only) (with its `Require ip` allow-list) to actually expose it to LAN clients; do not change the compose port mapping to `0.0.0.0:8000:8000`.
 
 ---
 
@@ -259,6 +262,8 @@ See `Dockerfile` and `docker-compose.yml` at the project root. The compose file 
 | 401 on every request from the browser | `access_token` cookie missing/expired — log in again. Check `SECRET_KEY` hasn't changed (invalidates all existing tokens). |
 | Emails not sent | `SMTP_ENABLED=false` (default) — messages are logged, not sent. Set `SMTP_ENABLED=true` and configure `SMTP_*`. |
 | Import rejected with "missing required column(s)" | The uploaded workbook's header row doesn't match `app/utils/excel_reader.py::SETUP_IMPORT_COLUMNS`. Download the Blank Template from Product Management first. |
-| Static assets 404 in production | Confirm Nginx is serving `/static/` (see `deploy/nginx.conf`) and that the app was started with `app/web/static` present relative to its working directory. |
+| Static assets 404 in production | Confirm Apache is serving `/static/` (see `deploy/apache.conf`'s `Alias` directive) and that the app was started with `app/web/static` present relative to its working directory. |
+| `403 Forbidden` from a machine that should have access | Your client's IP isn't inside the CIDR ranges listed in `deploy/apache.conf`'s `Require ip` directives (both `<VirtualHost>` blocks) — update them to match your actual internal subnet(s) and reload Apache. |
+| `AH00526`/`Invalid command 'ProxyPass'` on `apachectl configtest` | `mod_proxy`/`mod_proxy_http`/`mod_proxy_uds` aren't enabled — run `sudo a2enmod ssl proxy proxy_http proxy_uds headers rewrite expires` then reload Apache. |
 
 See DEVELOPER_GUIDE.md §Common Issues and §FAQ for backend/developer-facing troubleshooting.

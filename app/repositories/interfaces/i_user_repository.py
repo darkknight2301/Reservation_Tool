@@ -28,3 +28,6 @@ class IUserRepository(Protocol):
 
     def delete(self, user_id: int) -> bool:
         ...
+
+    def set_groups(self, user: User, group_ids: List[int]) -> User:
+        ...

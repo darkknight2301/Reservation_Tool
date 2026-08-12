@@ -1,6 +1,6 @@
 """User Management admin screen and the Approval Dashboard."""
 import json
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 
@@ -77,24 +77,24 @@ def user_save(
     password: str = Form(default=""),
     full_name: str = Form(...),
     role_name: str = Form(...),
-    group_id: str = Form(default=""),
+    group_ids: List[str] = Form(default=[]),
     is_active: Optional[str] = Form(default=None),
     current_user: User = Depends(require_web_permission(PermissionCode.USER_MANAGE)),
     user_service: UserService = Depends(get_user_service),
 ):
     """Create or update a User, then re-render the list."""
     message = "User saved successfully."
-    resolved_group_id = int(group_id) if group_id else None
+    resolved_group_ids = [int(g) for g in group_ids if g]
     try:
         if user_id:
             payload = UserUpdateRequest(
-                full_name=full_name, role_name=role_name, group_id=resolved_group_id, is_active=bool(is_active)
+                full_name=full_name, role_name=role_name, group_ids=resolved_group_ids, is_active=bool(is_active)
             )
             user_service.update(int(user_id), payload, current_user)
         else:
             payload = UserCreateRequest(
                 username=username, email=email, password=password, full_name=full_name,
-                role_name=role_name, group_id=resolved_group_id,
+                role_name=role_name, group_ids=resolved_group_ids,
             )
             user_service.create(payload, current_user)
     except AppError as exc:

@@ -2,7 +2,7 @@
     <table class="table table-hover table-sm align-middle mb-0">
         <thead>
             <tr>
-                <th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Group</th>
+                <th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Groups</th>
                 <th>Status</th><th>Active</th><th class="text-end">Actions</th>
             </tr>
         </thead>
@@ -13,7 +13,7 @@
                 <td>{{ u.full_name }}</td>
                 <td>{{ u.email }}</td>
                 <td><span class="badge text-bg-secondary">{{ u.role.name }}</span></td>
-                <td>{{ u.group.name if u.group else "—" }}</td>
+                <td>{{ u.groups|map(attribute='name')|join(', ') if u.groups else (u.group.name if u.group else "—") }}</td>
                 <td><span class="badge rms-status-{{ u.status }}">{{ u.status }}</span></td>
                 <td>{% if u.is_active %}<i class="bi bi-check-circle text-success"></i>{% else %}<i class="bi bi-x-circle text-danger"></i>{% endif %}</td>
                 <td class="text-end">

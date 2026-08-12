@@ -7,6 +7,9 @@
                 <td>{{ product.name }}</td>
                 <td class="rms-truncate">{{ product.description or "—" }}</td>
                 <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="/admin/products/{{ product.id }}/template" title="Design Template">
+                        <i class="bi bi-layout-text-sidebar-reverse"></i> Template
+                    </a>
                     <a class="btn btn-outline-secondary btn-sm" href="/admin/products/{{ product.id }}/export" title="Export setups">
                         <i class="bi bi-file-earmark-excel"></i>
                     </a>

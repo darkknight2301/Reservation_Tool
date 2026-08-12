@@ -1,0 +1,62 @@
+<h6 class="text-muted small text-uppercase mb-2">Mandatory Columns</h6>
+<div class="rms-table-wrapper mb-4">
+    <table class="table table-hover table-sm align-middle mb-0">
+        <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Mandatory</th><th>Order</th></tr></thead>
+        <tbody>
+            {% for col in template.mandatory_columns %}
+            <tr class="text-muted">
+                <td>{{ col.label }}</td>
+                <td>{{ col.data_type }}</td>
+                <td><i class="bi bi-check-lg"></i></td>
+                <td><span class="badge text-bg-secondary">Mandatory</span></td>
+                <td>{{ loop.index }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h6 class="text-muted small text-uppercase mb-2">Custom Columns</h6>
+<div class="rms-table-wrapper">
+    <table class="table table-hover table-sm align-middle mb-0">
+        <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Default / Allowed Values</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>
+            {% for col in template.custom_columns %}
+            <tr>
+                <td>{{ col.label }}<div class="text-muted small">{{ col.name }}</div></td>
+                <td>{{ col.data_type }}</td>
+                <td>{{ "Yes" if col.required else "No" }}</td>
+                <td class="rms-truncate">
+                    {% if col.data_type == "DROPDOWN" %}
+                        {{ col.allowed_values|join(", ") if col.allowed_values else "—" }}
+                    {% else %}
+                        {{ col.default_value or "—" }}
+                    {% endif %}
+                </td>
+                <td class="text-end">
+                    <button class="btn btn-outline-secondary btn-sm" title="Move up" {% if loop.first %}disabled{% endif %}
+                            hx-post="/admin/products/{{ template.product_id }}/template/columns/{{ col.id }}/move"
+                            hx-vals='{"direction": "up"}' hx-target="#templateColumnsContainer" hx-swap="innerHTML">
+                        <i class="bi bi-arrow-up"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" title="Move down" {% if loop.last %}disabled{% endif %}
+                            hx-post="/admin/products/{{ template.product_id }}/template/columns/{{ col.id }}/move"
+                            hx-vals='{"direction": "down"}' hx-target="#templateColumnsContainer" hx-swap="innerHTML">
+                        <i class="bi bi-arrow-down"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" hx-get="/admin/products/{{ template.product_id }}/template/column-form?column_id={{ col.id }}"
+                            hx-target="#dialogContainer" hx-swap="innerHTML"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-outline-danger btn-sm" hx-delete="/admin/products/{{ template.product_id }}/template/columns/{{ col.id }}"
+                            hx-target="#templateColumnsContainer" hx-swap="innerHTML"
+                            hx-confirm="Delete the '{{ col.label }}' column? This does not delete existing setup data."
+                            data-confirm-title="Delete column" data-confirm-body="Delete '{{ col.label }}'?">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-4">No custom columns yet. Add one, or import an Excel file with extra columns.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

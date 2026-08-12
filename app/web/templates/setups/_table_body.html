@@ -19,8 +19,14 @@
                 <th>Adapter</th>
                 <th>Owner</th>
                 <th>Location</th>
+                <th>Group</th>
+                <th>Product</th>
+                {% for col in custom_columns %}
+                <th>{{ col.label }}</th>
+                {% endfor %}
                 <th>Reserved Time</th>
                 <th>Remarks</th>
+                <th>Actions</th>
             </tr>
             <tr class="rms-filter-row">
                 <th></th>
@@ -40,7 +46,13 @@
                 <th><input type="text" class="form-control rms-column-filter" data-column="14" placeholder="Filter"></th>
                 <th><input type="text" class="form-control rms-column-filter" data-column="15" placeholder="Filter"></th>
                 <th></th>
-                <th><input type="text" class="form-control rms-column-filter" data-column="17" placeholder="Filter"></th>
+                <th></th>
+                {% for col in custom_columns %}
+                <th></th>
+                {% endfor %}
+                <th></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="{{ 19 + custom_columns|length }}" placeholder="Filter"></th>
+                <th></th>
             </tr>
         </thead>
         <tbody id="setupsTableBody">
@@ -68,15 +80,28 @@
                 <td>{{ row.setup.adapter or "—" }}</td>
                 <td>{{ row.setup.owner.full_name if row.setup.owner else "—" }}</td>
                 <td>{{ row.setup.location }}</td>
+                <td>{{ row.setup.group.name if row.setup.group else "—" }}</td>
+                <td>{{ row.setup.product.name if row.setup.product else "—" }}</td>
+                {% for col in custom_columns %}
+                <td>{{ row.custom_values.get(col.name) or "—" }}</td>
+                {% endfor %}
                 <td>
                     {% if row.reservation %}
                     {{ row.reservation.reserved_from.strftime("%Y-%m-%d %H:%M") }} &rarr; {{ row.reservation.reserved_until.strftime("%Y-%m-%d %H:%M") }}
                     {% else %}—{% endif %}
                 </td>
                 <td class="rms-truncate" title="{{ (row.reservation.remarks if row.reservation and row.reservation.remarks else row.setup.remarks) or '' }}">{{ (row.reservation.remarks if row.reservation and row.reservation.remarks else row.setup.remarks) or "—" }}</td>
+                <td>
+                    {% if is_admin_setup_manager %}
+                    <button type="button" class="btn btn-outline-secondary btn-sm" title="Edit setup"
+                            hx-get="/setups/{{ row.setup.id }}/edit-form" hx-target="#dialogContainer" hx-swap="innerHTML">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    {% else %}—{% endif %}
+                </td>
             </tr>
             {% else %}
-            <tr><td colspan="18" class="text-center text-muted py-4">No setups match the current filters.</td></tr>
+            <tr><td colspan="{{ 21 + custom_columns|length }}" class="text-center text-muted py-4">No setups match the current filters.</td></tr>
             {% endfor %}
         </tbody>
     </table>
