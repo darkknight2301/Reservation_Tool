@@ -1,5 +1,4 @@
 """Announcement Manager screen: list active announcements, CRUD for permitted roles."""
-import json
 from datetime import datetime
 from typing import Optional
 
@@ -12,6 +11,7 @@ from app.models.user import User
 from app.schemas.announcement import AnnouncementCreateRequest, AnnouncementFilter, AnnouncementUpdateRequest
 from app.services.announcement_service import AnnouncementService
 from app.web.deps import base_context, get_current_web_user, require_web_permission, templates
+from app.web.htmx_utils import hx_trigger
 
 router = APIRouter(tags=["Web - Announcements"])
 
@@ -77,19 +77,19 @@ def announcement_save(
         if announcement_id:
             payload = AnnouncementUpdateRequest(title=title, message=message, priority=priority, start_date=start_dt, end_date=end_dt)
             announcement_service.update(int(announcement_id), payload, current_user)
-            toast_message = "Announcement updated successfully."
+            toast_message, toast_type = "Announcement updated successfully.", "success"
         else:
             payload = AnnouncementCreateRequest(title=title, message=message, priority=priority, start_date=start_dt, end_date=end_dt)
             announcement_service.create(payload, current_user)
-            toast_message = "Announcement created successfully."
+            toast_message, toast_type = "Announcement created successfully.", "success"
     except AppError as exc:
-        toast_message = exc.message
+        toast_message, toast_type = exc.message, "error"
 
     announcements, _ = announcement_service.list(AnnouncementFilter(), page=1, page_size=50)
     context = base_context(request, current_user)
     context.update({"announcements": announcements})
     response = templates.TemplateResponse("announcements/_list.html", context)
-    response.headers["HX-Trigger"] = _toast_and_close(toast_message)
+    response.headers["HX-Trigger"] = hx_trigger(toast_message, toast_type, close_dialog=(toast_type == "success"))
     return response
 
 
@@ -101,18 +101,15 @@ def announcement_delete(
     announcement_service: AnnouncementService = Depends(get_announcement_service),
 ):
     """Delete an Announcement, then re-render the list."""
-    announcement_service.delete(announcement_id, current_user)
+    message, message_type = "Announcement deleted successfully.", "success"
+    try:
+        announcement_service.delete(announcement_id, current_user)
+    except AppError as exc:
+        message, message_type = exc.message, "error"
+
     announcements, _ = announcement_service.list(AnnouncementFilter(), page=1, page_size=50)
     context = base_context(request, current_user)
     context.update({"announcements": announcements})
     response = templates.TemplateResponse("announcements/_list.html", context)
-    response.headers["HX-Trigger"] = _toast_only("Announcement deleted successfully.")
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
-
-
-def _toast_and_close(message: str) -> str:
-    return json.dumps({"showToast": {"message": message, "type": "success"}, "closeDialog": {}})
-
-
-def _toast_only(message: str) -> str:
-    return json.dumps({"showToast": {"message": message, "type": "success"}})

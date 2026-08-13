@@ -20,7 +20,12 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label small">Password</label>
-                        <input type="password" class="form-control" name="password" required minlength="8">
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="newUserPassword" name="password" required minlength="8">
+                            <button type="button" class="btn btn-outline-secondary rms-toggle-password" data-target="newUserPassword" aria-label="Show password">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
                     </div>
                     {% endif %}
 

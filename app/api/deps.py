@@ -16,6 +16,7 @@ from app.repositories.sqlalchemy.audit_repository import AuditLogRepository
 from app.repositories.sqlalchemy.export_repository import ExportRepository
 from app.repositories.sqlalchemy.group_repository import GroupRepository
 from app.repositories.sqlalchemy.product_repository import ProductRepository
+from app.repositories.sqlalchemy.password_reset_repository import PasswordResetRepository
 from app.repositories.sqlalchemy.refresh_token_repository import RefreshTokenRepository
 from app.repositories.sqlalchemy.reservation_repository import ReservationRepository
 from app.repositories.sqlalchemy.role_repository import RoleRepository
@@ -53,6 +54,10 @@ def get_role_repository(db: Session = Depends(get_db)) -> RoleRepository:
 
 def get_refresh_token_repository(db: Session = Depends(get_db)) -> RefreshTokenRepository:
     return RefreshTokenRepository(db)
+
+
+def get_password_reset_repository(db: Session = Depends(get_db)) -> PasswordResetRepository:
+    return PasswordResetRepository(db)
 
 
 def get_product_repository(db: Session = Depends(get_db)) -> ProductRepository:
@@ -124,8 +129,13 @@ def get_auth_service(
     refresh_token_repository: RefreshTokenRepository = Depends(get_refresh_token_repository),
     role_lookup_service: RoleLookupService = Depends(get_role_lookup_service),
     audit_service: AuditService = Depends(get_audit_service),
+    password_reset_repository: PasswordResetRepository = Depends(get_password_reset_repository),
+    email_service: EmailService = Depends(get_email_service),
 ) -> AuthService:
-    return AuthService(user_repository, refresh_token_repository, role_lookup_service, audit_service)
+    return AuthService(
+        user_repository, refresh_token_repository, role_lookup_service, audit_service,
+        password_reset_repository, email_service,
+    )
 
 
 def get_user_service(

@@ -22,7 +22,7 @@ class IProductRepository(Protocol):
     def update(self, product: Product) -> Product:
         ...
 
-    def delete(self, product_id: int) -> None:
+    def delete(self, product_id: int) -> bool:
         ...
 
     def has_setups(self, product_id: int) -> bool:

@@ -1,5 +1,4 @@
 """Product selection screen (card grid) and the Product Management admin screen."""
-import json
 import os
 import tempfile
 import uuid
@@ -27,6 +26,7 @@ from app.services.product_service import ProductService
 from app.services.setup_service import SetupService
 from app.services.template_service import TemplateService
 from app.web.deps import base_context, get_current_web_user, require_web_permission, templates
+from app.web.htmx_utils import hx_trigger
 
 router = APIRouter(tags=["Web - Products"])
 
@@ -108,20 +108,20 @@ def product_save(
     product_service: ProductService = Depends(get_product_service),
 ):
     """Create or update a Product, then re-render the list."""
-    message = "Product saved successfully."
+    message, message_type = "Product saved successfully.", "success"
     try:
         if product_id:
             product_service.update(int(product_id), ProductUpdateRequest(name=name, description=description or None), current_user)
         else:
             product_service.create(ProductCreateRequest(name=name, description=description or None), current_user)
     except AppError as exc:
-        message = exc.message
+        message, message_type = exc.message, "error"
 
     products, _ = product_service.list(page=1, page_size=200)
     context = base_context(request, current_user)
     context.update({"products": products})
     response = templates.TemplateResponse("admin/_products_list.html", context)
-    response.headers["HX-Trigger"] = _toast_and_close(message)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
 
 
@@ -143,7 +143,7 @@ def product_delete(
     context = base_context(request, current_user)
     context.update({"products": products})
     response = templates.TemplateResponse("admin/_products_list.html", context)
-    response.headers["HX-Trigger"] = _toast(message, message_type)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -160,14 +160,6 @@ def export_product_setups(
         filename=export_log.file_path.split("/")[-1],
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
-
-def _toast(message: str, message_type: str) -> str:
-    return json.dumps({"showToast": {"message": message, "type": message_type}})
-
-
-def _toast_and_close(message: str) -> str:
-    return json.dumps({"showToast": {"message": message, "type": "success"}, "closeDialog": {}})
 
 
 @router.get("/admin/setups/template")
@@ -257,7 +249,7 @@ def template_column_save(
     template_service: TemplateService = Depends(get_template_service),
 ):
     """Create or update a custom template column, then re-render the columns table."""
-    message = "Column saved successfully."
+    message, message_type = "Column saved successfully.", "success"
     parsed_allowed = [v.strip() for v in allowed_values.split(",") if v.strip()] or None
     try:
         if column_id:
@@ -279,13 +271,13 @@ def template_column_save(
                 current_user,
             )
     except AppError as exc:
-        message = exc.message
+        message, message_type = exc.message, "error"
 
     template = template_service.get_template(product_id)
     context = base_context(request, current_user)
     context.update({"product_id": product_id, "template": template})
     response = templates.TemplateResponse("admin/_product_template_columns.html", context)
-    response.headers["HX-Trigger"] = _toast_and_close(message)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
 
 
@@ -308,7 +300,7 @@ def template_column_delete(
     context = base_context(request, current_user)
     context.update({"product_id": product_id, "template": template})
     response = templates.TemplateResponse("admin/_product_template_columns.html", context)
-    response.headers["HX-Trigger"] = _toast(message, message_type)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -380,7 +372,7 @@ async def product_import_submit(
         context = base_context(request, current_user)
         context.update({"product_id": product_id, "import_error": exc.message})
         response = templates.TemplateResponse("admin/_product_import_result.html", context)
-        response.headers["HX-Trigger"] = _toast(exc.message, "error")
+        response.headers["HX-Trigger"] = hx_trigger(exc.message, "error")
         return response
 
     context = base_context(request, current_user)
@@ -395,9 +387,9 @@ async def product_import_submit(
     response = templates.TemplateResponse("admin/_product_import_result.html", context)
     if result.committed:
         message = "Import complete: {0} created, {1} updated.".format(result.created_count, result.updated_count)
-        response.headers["HX-Trigger"] = _toast(message, "success")
+        response.headers["HX-Trigger"] = hx_trigger(message, "success")
     elif not result.new_columns:
-        response.headers["HX-Trigger"] = _toast(
+        response.headers["HX-Trigger"] = hx_trigger(
             "Import rejected: {0} row error(s) found. No rows were committed.".format(result.error_count), "warning"
         )
     return response
@@ -419,7 +411,7 @@ def product_import_confirm(
     if temp_path is None or not os.path.exists(temp_path):
         context.update({"product_id": product_id, "import_error": "This import has expired. Please re-upload the file."})
         response = templates.TemplateResponse("admin/_product_import_result.html", context)
-        response.headers["HX-Trigger"] = _toast("Import expired -- please re-upload.", "error")
+        response.headers["HX-Trigger"] = hx_trigger("Import expired -- please re-upload.", "error")
         return response
 
     try:
@@ -441,7 +433,7 @@ def product_import_confirm(
 
     context.update({"product_id": product_id, "result": result})
     response = templates.TemplateResponse("admin/_product_import_result.html", context)
-    response.headers["HX-Trigger"] = _toast(message, message_type)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -465,7 +457,7 @@ async def setup_import_submit(
         context = base_context(request, current_user)
         context.update({"import_error": exc.message})
         response = templates.TemplateResponse("admin/_setup_import_result.html", context)
-        response.headers["HX-Trigger"] = _toast(exc.message, "error")
+        response.headers["HX-Trigger"] = hx_trigger(exc.message, "error")
         return response
     finally:
         if os.path.exists(temp_path):
@@ -476,9 +468,9 @@ async def setup_import_submit(
     response = templates.TemplateResponse("admin/_setup_import_result.html", context)
     if result.committed:
         message = "Import complete: {0} created, {1} updated.".format(result.created_count, result.updated_count)
-        response.headers["HX-Trigger"] = _toast(message, "success")
+        response.headers["HX-Trigger"] = hx_trigger(message, "success")
     else:
-        response.headers["HX-Trigger"] = _toast(
+        response.headers["HX-Trigger"] = hx_trigger(
             "Import rejected: {0} row error(s) found. No rows were committed.".format(result.error_count), "warning"
         )
     return response

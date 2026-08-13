@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog  # noqa: F401
 from app.models.excel_transaction_log import ExcelTransactionLog  # noqa: F401
 from app.models.export_log import ExportLog  # noqa: F401
 from app.models.group import Group  # noqa: F401
+from app.models.password_reset_token import PasswordResetToken  # noqa: F401
 from app.models.permission import Permission, role_permissions  # noqa: F401
 from app.models.product import Product  # noqa: F401
 from app.models.product_template_column import ProductTemplateColumn  # noqa: F401
@@ -31,6 +32,7 @@ __all__ = [
     "Group",
     "Permission",
     "role_permissions",
+    "PasswordResetToken",
     "Product",
     "ProductTemplateColumn",
     "RefreshToken",

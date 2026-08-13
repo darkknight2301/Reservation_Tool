@@ -89,6 +89,19 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
+class PasswordResetRequestRequest(BaseModel):
+    """Payload for requesting a password-reset email ("forgot password")."""
+
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    """Payload for completing a password reset with the emailed token."""
+
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 class RoleResponse(BaseModel):
     """Read model for a Role."""
 

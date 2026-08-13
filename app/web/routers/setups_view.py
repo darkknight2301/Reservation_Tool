@@ -7,7 +7,6 @@ changes. Since ``reserved_by`` and ``reserved_time`` are facts about the
 document, section 4.3), this router joins the paginated Setup page against
 every currently-ACTIVE reservation to build each row.
 """
-import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -43,6 +42,7 @@ from app.services.template_service import TemplateService
 from app.services.user_service import UserService
 from app.utils.pagination import total_pages as compute_total_pages
 from app.web.deps import base_context, get_current_web_user, require_web_permission, templates
+from app.web.htmx_utils import hx_trigger
 
 router = APIRouter(tags=["Web - Setups"])
 
@@ -218,9 +218,9 @@ def reserve_submit(
     response = templates.TemplateResponse("setups/_table_body.html", context)
 
     if errors:
-        response.headers["HX-Trigger"] = _toast_trigger("; ".join(errors), "warning")
+        response.headers["HX-Trigger"] = hx_trigger("; ".join(errors), "warning", close_dialog=False)
     else:
-        response.headers["HX-Trigger"] = _toast_trigger("Reservation created successfully.", "success")
+        response.headers["HX-Trigger"] = hx_trigger("Reservation created successfully.", "success", close_dialog=True)
     return response
 
 
@@ -267,7 +267,7 @@ def swap_submit(
     filters = SetupFilter()
     context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
-    response.headers["HX-Trigger"] = _toast_trigger(message, message_type)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
 
 
@@ -317,9 +317,9 @@ def unreserve_submit(
     context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
     if errors:
-        response.headers["HX-Trigger"] = _toast_trigger("; ".join(errors), "warning")
+        response.headers["HX-Trigger"] = hx_trigger("; ".join(errors), "warning", close_dialog=False)
     else:
-        response.headers["HX-Trigger"] = _toast_trigger("Setup(s) unreserved successfully.", "success")
+        response.headers["HX-Trigger"] = hx_trigger("Setup(s) unreserved successfully.", "success", close_dialog=True)
     return response
 
 
@@ -427,10 +427,5 @@ async def setup_edit_save(
     filters = SetupFilter()
     context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
-    response.headers["HX-Trigger"] = _toast_trigger(message, message_type)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
-
-
-def _toast_trigger(message: str, message_type: str) -> str:
-    """Build an ``HX-Trigger`` header value that fires app.js's ``showToast`` handler."""
-    return json.dumps({"showToast": {"message": message, "type": message_type}})

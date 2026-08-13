@@ -2,7 +2,6 @@
 Swap Mapping screen: lets a Lead+ coordinate a multi-node swap mapping
 (A->B, B->A, C->D) across several users' reservations in one atomic action.
 """
-import json
 from typing import List
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -18,6 +17,7 @@ from app.services.reservation_service import ReservationService
 from app.services.setup_service import SetupService
 from app.services.swap_service import SwapService
 from app.web.deps import base_context, require_web_permission, templates
+from app.web.htmx_utils import hx_trigger
 
 router = APIRouter(tags=["Web - Swap Mapping"])
 
@@ -96,7 +96,7 @@ def create_swap_mapping_web(
 
     context = _load_page_context(request, current_user, reservation_service, setup_service, swap_service)
     response = templates.TemplateResponse("admin/_swap_mapping_batches.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -118,5 +118,5 @@ def approve_swap_mapping_web(
 
     context = _load_page_context(request, current_user, reservation_service, setup_service, swap_service)
     response = templates.TemplateResponse("admin/_swap_mapping_batches.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response

@@ -68,7 +68,11 @@ class ProductService:
             raise ConflictError(
                 "Product '{0}' cannot be deleted while setups are assigned to it.".format(product.name)
             )
-        self._product_repository.delete(product_id)
+        deleted = self._product_repository.delete(product_id)
+        if not deleted:
+            raise ConflictError(
+                "Product '{0}' cannot be deleted while setups are assigned to it.".format(product.name)
+            )
         self._audit_service.record(
             user_id=acting_user.id,
             action=AuditAction.DELETE,

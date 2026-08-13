@@ -37,6 +37,25 @@
     }
 
     // ---------------------------------------------------------------
+    // Password visibility toggle ("eye" icon)
+    // ---------------------------------------------------------------
+    // Delegated on document so it works for password fields injected later
+    // via HTMX (e.g. the admin User modal), not just ones present at load.
+    document.addEventListener("click", function (evt) {
+        const toggleBtn = evt.target.closest(".rms-toggle-password");
+        if (!toggleBtn) return;
+        const input = document.getElementById(toggleBtn.getAttribute("data-target"));
+        if (!input) return;
+        const icon = toggleBtn.querySelector("i");
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        if (icon) {
+            icon.className = showing ? "bi bi-eye" : "bi bi-eye-slash";
+        }
+        toggleBtn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    });
+
+    // ---------------------------------------------------------------
     // Toast notifications
     // ---------------------------------------------------------------
     const TOAST_ICONS = {
@@ -171,6 +190,29 @@
             const instance = bootstrap.Modal.getInstance(modalEl);
             if (instance) instance.hide();
         });
+    });
+
+    // Safety net: every dialog (reserve, swap, unreserve, edit, admin forms)
+    // is injected into #dialogContainer and shows itself via
+    // `new bootstrap.Modal(el).show()`. Bootstrap appends the .modal-backdrop
+    // element to <body> itself, *outside* #dialogContainer, so if a dialog
+    // is ever replaced without going through its own hide() first (e.g. the
+    // container gets swapped again before a prior save's closeDialog event
+    // has finished its fade-out transition), the old backdrop can be left
+    // behind -- silently blocking clicks/dropdowns anywhere on the page.
+    // Clearing any stray backdrop immediately before a new dialog swaps in
+    // guarantees the page never gets stuck that way.
+    document.body.addEventListener("htmx:beforeSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "dialogContainer") {
+            document.querySelectorAll(".modal.show").forEach(function (modalEl) {
+                const instance = bootstrap.Modal.getInstance(modalEl);
+                if (instance) instance.hide();
+            });
+            document.querySelectorAll(".modal-backdrop").forEach(function (el) { el.remove(); });
+            document.body.classList.remove("modal-open");
+            document.body.style.removeProperty("overflow");
+            document.body.style.removeProperty("padding-right");
+        }
     });
 
     // Redirect helper: server responses may set

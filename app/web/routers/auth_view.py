@@ -9,7 +9,7 @@ from app.api.deps import get_auth_service, get_group_service
 from app.core.config import settings
 from app.core.exceptions import AppError
 from app.schemas.auth import LoginRequest
-from app.schemas.user import UserRegisterRequest
+from app.schemas.user import PasswordResetConfirmRequest, PasswordResetRequestRequest, UserRegisterRequest
 from app.services.auth_service import AuthService
 from app.services.group_service import GroupService
 from app.web.deps import get_optional_web_user, templates
@@ -126,3 +126,94 @@ def logout_submit(request: Request):
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
     return response
+
+
+@router.get("/forgot-password")
+def forgot_password_page(request: Request, current_user=Depends(get_optional_web_user)):
+    """Render the 'forgot password' request form."""
+    if current_user is not None:
+        return RedirectResponse("/dashboard", status_code=HTTP_302_FOUND)
+    return templates.TemplateResponse(
+        "auth/forgot_password.html", {"request": request, "current_user": None, "error": None, "success": None}
+    )
+
+
+@router.post("/forgot-password")
+def forgot_password_submit(
+    request: Request,
+    email: str = Form(...),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """
+    Process the 'forgot password' form. Always shows the same success
+    message, whether or not the email belongs to an account, so the form
+    can't be used to discover which addresses are registered.
+    """
+    try:
+        payload = PasswordResetRequestRequest(email=email)
+        auth_service.request_password_reset(
+            payload.email, base_url=str(request.base_url), ip_address=request.client.host if request.client else None
+        )
+    except AppError:
+        pass  # deliberately swallowed -- see the generic message below
+    except ValueError:
+        pass  # an invalid email format is treated the same as an unknown one
+    return templates.TemplateResponse(
+        "auth/forgot_password.html",
+        {
+            "request": request, "current_user": None, "error": None,
+            "success": "If an account exists for that email, a password reset link has been sent.",
+        },
+    )
+
+
+@router.get("/reset-password")
+def reset_password_page(request: Request, token: str, current_user=Depends(get_optional_web_user)):
+    """Render the 'set a new password' form. The token is carried through as a hidden field."""
+    if current_user is not None:
+        return RedirectResponse("/dashboard", status_code=HTTP_302_FOUND)
+    return templates.TemplateResponse(
+        "auth/reset_password.html", {"request": request, "current_user": None, "error": None, "token": token}
+    )
+
+
+@router.post("/reset-password")
+def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Process the 'set a new password' form and complete the reset."""
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "auth/reset_password.html",
+            {"request": request, "current_user": None, "error": "Passwords do not match.", "token": token},
+            status_code=422,
+        )
+    try:
+        payload = PasswordResetConfirmRequest(token=token, new_password=new_password)
+        auth_service.reset_password(
+            payload.token, payload.new_password, ip_address=request.client.host if request.client else None
+        )
+    except AppError as exc:
+        return templates.TemplateResponse(
+            "auth/reset_password.html",
+            {"request": request, "current_user": None, "error": exc.message, "token": token},
+            status_code=exc.status_code,
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "auth/reset_password.html",
+            {"request": request, "current_user": None, "error": str(exc), "token": token},
+            status_code=422,
+        )
+
+    return templates.TemplateResponse(
+        "auth/login.html",
+        {
+            "request": request, "current_user": None, "error": None,
+            "success": "Password reset successfully. You can now log in with your new password.",
+        },
+    )

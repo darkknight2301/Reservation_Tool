@@ -1,6 +1,7 @@
 """SQLAlchemy implementation of the Product repository."""
 from typing import List, Optional, Tuple
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.product import Product
@@ -39,11 +40,29 @@ class ProductRepository:
         self._db.refresh(product)
         return product
 
-    def delete(self, product_id: int) -> None:
+    def delete(self, product_id: int) -> bool:
+        """
+        Delete a Product.
+
+        Returns:
+            True if the product was deleted (or did not exist). False if the
+            delete was blocked by a foreign key constraint -- Setups (or
+            template columns with dependent data) still reference it. This
+            is a defense-in-depth safety net behind the application-level
+            ``has_setups`` check in ``ProductService.delete``: it also
+            catches the case where a Setup was assigned to the product in
+            between that check and this delete.
+        """
         product = self.get_by_id(product_id)
-        if product is not None:
-            self._db.delete(product)
+        if product is None:
+            return True
+        self._db.delete(product)
+        try:
             self._db.flush()
+        except IntegrityError:
+            self._db.rollback()
+            return False
+        return True
 
     def has_setups(self, product_id: int) -> bool:
         return self._db.query(Setup.id).filter(Setup.product_id == product_id).first() is not None

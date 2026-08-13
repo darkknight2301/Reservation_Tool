@@ -1,5 +1,4 @@
 """User Management admin screen and the Approval Dashboard."""
-import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -17,6 +16,7 @@ from app.schemas.user import (
 from app.services.group_service import GroupService
 from app.services.user_service import UserService
 from app.web.deps import base_context, require_web_permission, templates
+from app.web.htmx_utils import hx_trigger
 
 router = APIRouter(tags=["Web - Users"])
 
@@ -83,7 +83,7 @@ def user_save(
     user_service: UserService = Depends(get_user_service),
 ):
     """Create or update a User, then re-render the list."""
-    message = "User saved successfully."
+    message, message_type = "User saved successfully.", "success"
     resolved_group_ids = [int(g) for g in group_ids if g]
     try:
         if user_id:
@@ -98,15 +98,15 @@ def user_save(
             )
             user_service.create(payload, current_user)
     except AppError as exc:
-        message = exc.message
+        message, message_type = exc.message, "error"
     except ValueError as exc:
-        message = str(exc)
+        message, message_type = str(exc), "error"
 
     users, _ = user_service.list(UserFilter(), page=1, page_size=100)
     context = base_context(request, current_user)
     context.update({"users": users})
     response = templates.TemplateResponse("admin/_users_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": "success"}, "closeDialog": {}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
 
 
@@ -128,7 +128,7 @@ def user_delete(
     context = base_context(request, current_user)
     context.update({"users": users})
     response = templates.TemplateResponse("admin/_users_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -150,7 +150,7 @@ def user_hard_delete(
     context = base_context(request, current_user)
     context.update({"users": users})
     response = templates.TemplateResponse("admin/_users_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -172,7 +172,7 @@ def user_reactivate(
     context = base_context(request, current_user)
     context.update({"users": users})
     response = templates.TemplateResponse("admin/_users_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
 
 
@@ -230,5 +230,5 @@ def process_approval(
     context = base_context(request, current_user)
     context.update({"pending_users": pending_users, "roles": RoleName.ALL})
     response = templates.TemplateResponse("admin/_approvals_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response

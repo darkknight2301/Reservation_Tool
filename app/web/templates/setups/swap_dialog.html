@@ -1,8 +1,7 @@
 <div class="modal fade" id="swapModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <form hx-post="/setups/swap" hx-target="#setupsTableContainer" hx-swap="innerHTML"
-                  hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('swapModal')).hide(); }">
+            <form hx-post="/setups/swap" hx-target="#setupsTableContainer" hx-swap="innerHTML">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2 text-warning"></i>Request Setup Swap</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

@@ -1,5 +1,4 @@
 """Group Management admin screen: list/create/update/delete Groups."""
-import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -11,6 +10,7 @@ from app.models.user import User
 from app.schemas.group import GroupCreateRequest, GroupUpdateRequest
 from app.services.group_service import GroupService
 from app.web.deps import base_context, require_web_permission, templates
+from app.web.htmx_utils import hx_trigger
 
 router = APIRouter(tags=["Web - Groups"])
 
@@ -65,20 +65,20 @@ def group_save(
     group_service: GroupService = Depends(get_group_service),
 ):
     """Create or update a Group, then re-render the list."""
-    message = "Group saved successfully."
+    message, message_type = "Group saved successfully.", "success"
     try:
         if group_id:
             group_service.update(int(group_id), GroupUpdateRequest(name=name, description=description or None), current_user)
         else:
             group_service.create(GroupCreateRequest(name=name, description=description or None), current_user)
     except AppError as exc:
-        message = exc.message
+        message, message_type = exc.message, "error"
 
     groups, _ = group_service.list(page=1, page_size=200)
     context = base_context(request, current_user)
     context.update({"groups": groups})
     response = templates.TemplateResponse("admin/_groups_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": "success"}, "closeDialog": {}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
 
 
@@ -100,5 +100,5 @@ def group_delete(
     context = base_context(request, current_user)
     context.update({"groups": groups})
     response = templates.TemplateResponse("admin/_groups_list.html", context)
-    response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": message_type}})
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
     return response
