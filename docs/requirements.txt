@@ -1,0 +1,7 @@
+# Documentation build dependencies (not part of the application runtime).
+# Install with: pip install -r docs/requirements.txt
+#
+# Sphinx 7.1.x is the last 7.x line supporting Python 3.8; myst-parser 2.0.0
+# supports Sphinx >=6,<8 and Python 3.8+, matching the app's Python 3.8 pin.
+sphinx==7.1.2
+myst-parser==2.0.0

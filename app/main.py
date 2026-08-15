@@ -18,6 +18,7 @@ from app.web.routers.audit_view import router as audit_web_router
 from app.web.routers.auth_view import router as auth_web_router
 from app.web.routers.dashboard_view import router as dashboard_web_router
 from app.web.routers.developer_logs_view import router as developer_logs_web_router
+from app.web.routers.docs_view import router as docs_web_router
 from app.web.routers.groups_view import router as groups_web_router
 from app.web.routers.products_view import router as products_web_router
 from app.web.routers.setups_view import router as setups_web_router
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(announcements_web_router)
     app.include_router(audit_web_router)
     app.include_router(developer_logs_web_router)
+    app.include_router(docs_web_router)
 
     app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
 

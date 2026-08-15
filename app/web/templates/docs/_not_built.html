@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Documentation - Reservation System{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-center">
+    <div class="card rms-card shadow-sm" style="max-width: 640px;">
+        <div class="card-body p-4 text-center">
+            <i class="bi bi-journal-x display-5 text-muted"></i>
+            <h4 class="mt-2">Documentation not built yet</h4>
+            <p class="text-muted">
+                The documentation site hasn't been generated on this server. Ask an administrator to run:
+            </p>
+            <pre class="text-start bg-body-tertiary rounded p-2 small"><code>pip install -r docs/requirements.txt
+sphinx-build -b html docs docs/_build/html</code></pre>
+            <a href="/dashboard" class="btn btn-outline-secondary btn-sm mt-2">
+                <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -32,6 +32,17 @@
                 {% if current_user_permissions and 'logs:view' in current_user_permissions %}
                 <li class="nav-item"><a class="nav-link" href="/admin/developer-logs"><i class="bi bi-file-earmark-diff me-1"></i>Developer Logs</a></li>
                 {% endif %}
+                {% if current_user %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-question-circle me-1"></i>Documentation
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="/documentation/user_guide.html" target="_blank" rel="noopener"><i class="bi bi-book me-1"></i>User Guide</a></li>
+                        <li><a class="dropdown-item" href="/documentation/api_guide.html" target="_blank" rel="noopener"><i class="bi bi-code-slash me-1"></i>API Guide</a></li>
+                    </ul>
+                </li>
+                {% endif %}
             </ul>
             <div class="d-flex align-items-center gap-2">
                 <button id="themeToggleBtn" class="btn btn-outline-secondary btn-sm" title="Toggle dark mode">

@@ -48,6 +48,11 @@ held and the caller is prompted to "Add to Template & Import" or reject it
 `POST /api/v1/imports/setups/product/{id}?accept_new_columns=true|false`).
 Product-scoped export: `POST /api/v1/exports/setups/product/{id}`.
 
+## Documentation
+
+- `USER_GUIDE.md` / `API_GUIDE.md` — source of truth, read directly or via the Sphinx site below.
+- Sphinx site (built from those two files, nothing duplicated): `pip install -r docs/requirements.txt && sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
+
 ## License / Ownership
 
 Internal enterprise deployment. No external distribution license included by default.
