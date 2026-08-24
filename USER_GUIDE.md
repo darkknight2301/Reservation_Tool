@@ -16,22 +16,24 @@ Web app for reserving lab/test hardware ("setups") grouped under Products. Users
 
 Roles: **User, Lead, Developer, Developer Lead, Owner** (Owner has every permission).
 
-| Feature | User | Developer | Lead | Developer Lead | Owner |
+**Roles were renamed**: the old "User" role is now **Bot**, the old "Developer" role is now **User**, and "Developer Lead" is now **Manager**. Lead and Owner are unchanged in name. Permissions per role:
+
+| Feature | Bot | User | Lead | Manager | Owner |
 |---|---|---|---|---|---|
 | View products / setup table / announcements | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Reserve / Swap-request setups; cancel own reservation | | ✓ | ✓ | ✓ | ✓ |
-| Approve/reject swaps; cancel any reservation | | | ✓ | ✓ | ✓ |
 | Export Excel | | ✓ | ✓ | ✓ | ✓ |
+| Approve/reject swaps; cancel any reservation | | | ✓ | ✓ | ✓ |
 | Import Excel | | | ✓ | ✓ | ✓ |
 | Approve/reject pending registrations | | | ✓ | ✓ | ✓ |
 | Manage Groups | | | ✓ | ✓ | ✓ |
-| View Developer (Excel transaction) Logs | | | ✓ | ✓ | ✓ |
 | Manage products & Design Template | | | | ✓ | ✓ |
 | Manage users (create/edit/deactivate) | | | | ✓ | ✓ |
 | Manage Announcements | | | | ✓ | ✓ |
 | View Audit Logs | | | | ✓ | ✓ |
+| View Developer (Excel transaction) Logs | | | | ✓ | ✓ |
 
-The **User** role is view-only by default (no reserve/swap/import/export). Only permitted actions/nav items are shown to a given role.
+The **Bot** role is view-only by default (no reserve/swap/import/export). **Lead no longer has access to Developer Logs** (Manager/Owner only now). Only permitted actions/nav items are shown to a given role.
 
 ## 4. Dashboard
 
@@ -68,23 +70,24 @@ Under **Admin → Products**, an authorized user (product:manage — Developer L
 | Remarks | Reservation remark, or the setup's own remark |
 | Actions | Edit button (product:manage only) |
 
-Filters: Product, Group, Status, Location dropdowns/search, plus a per-column text filter row (client-side). No server-side sort; filtering only.
+Filters: Product, Group, Status, Location dropdowns/search, plus a per-column text filter row (client-side). No server-side sort; filtering only. The page opens pre-filtered to the first Product and first Group (rather than "All"), and shows up to 200 rows per page.
 
 ## 8. Reserve
 
-1. Select one or more AVAILABLE setups' checkboxes (requires `reservation:create` — Developer role or above).
+1. Select one or more AVAILABLE setups' checkboxes (requires `reservation:create` — User role or above).
 2. Click **Reserve**.
 3. Dialog shows the selected setups, a start/end time range, a Remarks field, and Announcement channel checkboxes (Wall, Mail to Leads, Mail to Group, Mail to All).
 4. Submit. One reservation is created per selected setup over the same time window. Validation errors (e.g. overlapping window, setup not available) are shown per-setup; setups that succeeded are still reserved even if another in the batch failed.
 
 ## 9. Swap
 
-A swap moves an existing reservation to a different setup.
+A swap exchanges one field's recorded value (e.g. an SSD) between two setups **you already have reserved** — it does not relocate either reservation.
 
-- **Single swap** (`swap:request` — Developer role or above): pick your active reservation and the setup you want instead; submit a swap request (optionally with a reason). It starts **PENDING**.
-- **Approve / reject** (`swap:approve` — Lead role or above): review pending requests and approve or reject them (with an optional reason).
+- **Rules**: both the current setup and the target setup must currently be reserved by you. You pick which column to exchange — one of the fixed hardware fields (SSD, HDD, Hardware Info, Capacity, Form Factor, Adapter, Aardvark, Quarch, APC, Remote Server), or, if the two setups belong to different products, a custom column that exists on **both** products' templates.
+- **Request** (`swap:request` — User role or above): open Swap from your reservation, pick the other setup and the column, optionally add a reason. Starts **PENDING**; a notification is sent for approval.
+- **Approve / reject** (`swap:approve` — Lead role or above): review pending requests; approving exchanges the column's value between the two setups (neither reservation changes).
 - **Cancel**: the requester can cancel their own still-pending swap request.
-- **Coordinated multi-setup swap mapping** (`swap:approve` — Lead role or above, via the swap-mapping screen): build a set of at least two moves (e.g. reservation A → setup B, reservation B → setup A) where every reservation and every target setup appears exactly once; submitted as one batch of PENDING swap requests, then approved together in a single action.
+- **Coordinated multi-setup swap mapping** (`swap:approve` — Lead role or above, via the swap-mapping screen): a separate, unrelated workflow for relocating several reservations across setups at once — build a set of moves (e.g. reservation A → setup B, reservation B → setup A) where every reservation and every target setup appears exactly once, submitted and approved as one batch.
 
 ## 10. Unreserve
 
@@ -92,9 +95,15 @@ A swap moves an existing reservation to a different setup.
 2. Preview shows what will be released.
 3. Confirm to cancel the reservation; the setup returns to AVAILABLE.
 
+If a reservation's end time passes and it is **not** manually unreserved, the system automatically completes it and posts a **CRITICAL** announcement plus a direct email to the setup's owner and the reserving user.
+
 ## 11. Announcements
 
-Options when reserving: **Wall** (dashboard banner), **Mail to Leads** (Lead/Developer Lead/Owner in the setup's Group), **Mail to Group** (all approved members of the Group), **Mail to All** (every active, approved user). Everyone with `announcement:view` (every role) can see active announcements; standalone create/edit/delete (`announcement:manage`) is Developer Lead/Owner only — Lead can view but not manage them.
+Options when reserving: **Wall** (dashboard banner), **Mail to Leads** (Lead/Manager/Owner in the setup's Group), **Mail to Group** (all approved members of the Group), **Mail to All** (every active, approved user). Everyone with `announcement:view` (every role) can see active announcements; standalone create/edit/delete (`announcement:manage`) is Manager/Owner only — Lead can view but not manage them.
+
+The Announcements screen lists announcements sorted **Critical → High → Normal → Low**, grouped into a collapsible section per priority (Critical and High expanded by default).
+
+**Automatic critical announcements**: if a reservation's time window elapses without the setup being unreserved, the system itself posts a CRITICAL announcement and emails the setup owner and the reserving user directly (see §10).
 
 ## 12. Groups
 
@@ -114,8 +123,8 @@ From a product's Template page → **Export**: downloads an `.xlsx` with that pr
 
 ## 16. Logs
 
-- **Audit Logs** (`/admin/logs`, `audit:view` — Developer Lead/Owner only): filterable, paginated table of create/update/delete/approve/reject/login/logout/swap/import/export events with user, entity, timestamp.
-- **Developer Logs** (`/admin/developer-logs`, `logs:view` — Lead, Developer Lead, Owner): tree view of rotated Excel import/export transaction log files, each downloadable.
+- **Audit Logs** (`/admin/logs`, `audit:view` — Manager/Owner only): filterable, paginated table of create/update/delete/approve/reject/login/logout/swap/import/export events with user, entity, timestamp.
+- **Developer Logs** (`/admin/developer-logs`, `logs:view` — Manager, Owner): tree view of rotated Excel import/export transaction log files, each downloadable. Lead no longer has access to this screen.
 
 ## 17. Common Errors
 
@@ -125,7 +134,7 @@ From a product's Template page → **Export**: downloads an `.xlsx` with that pr
 | Can't delete a Product | Setups still assigned to it | Remove/reassign setups first |
 | Import rejected with row errors | Missing required field, wrong type, invalid dropdown value | Fix the Excel file and re-upload |
 | "New columns detected" | Excel has headers not in the product's template | Choose Add to Template & Import, or fix the file |
-| Can't unreserve a setup | An active Swap involves it | Resolve/restore the swap first |
+| Swap request rejected as invalid | The two setups aren't both currently reserved by you, or the chosen column isn't common to both products | Pick two setups you have reserved and a shared column |
 | Reset link says invalid/expired | Link older than 30 minutes or already used | Request a new one via Forgot Password |
 
 ## 18. FAQ

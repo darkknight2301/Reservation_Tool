@@ -153,8 +153,8 @@ def export_product_setups(
     current_user: User = Depends(require_web_permission(PermissionCode.EXPORT_RUN)),
     export_service: ExportService = Depends(get_export_service),
 ):
-    """Export every Setup for a given Product (auto-generates a template if it has none). Requires ``export:run``."""
-    export_log = export_service.export_setups(SetupFilter(product_id=product_id), current_user)
+    """Export every Setup for a given Product using that Product's current template (mandatory + custom columns). Requires ``export:run``."""
+    export_log = export_service.export_setups_for_product(product_id, current_user)
     return FileResponse(
         path=export_log.file_path,
         filename=export_log.file_path.split("/")[-1],

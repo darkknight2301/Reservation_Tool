@@ -2,12 +2,21 @@
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import or_
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
+from app.core.constants import AnnouncementPriority
 from app.models.announcement import Announcement
 from app.schemas.announcement import AnnouncementFilter
 from app.utils.pagination import paginate_query
+
+_PRIORITY_RANK = case(
+    (Announcement.priority == AnnouncementPriority.CRITICAL, 4),
+    (Announcement.priority == AnnouncementPriority.HIGH, 3),
+    (Announcement.priority == AnnouncementPriority.NORMAL, 2),
+    (Announcement.priority == AnnouncementPriority.LOW, 1),
+    else_=0,
+)
 
 
 class AnnouncementRepository:
@@ -31,7 +40,7 @@ class AnnouncementRepository:
                 Announcement.start_date <= as_of,
                 or_(Announcement.end_date.is_(None), Announcement.end_date >= as_of),
             )
-        query = query.order_by(Announcement.priority.desc(), Announcement.created_at.desc())
+        query = query.order_by(_PRIORITY_RANK.desc(), Announcement.created_at.desc())
         return paginate_query(query, page, page_size)
 
     def create(self, announcement: Announcement) -> Announcement:

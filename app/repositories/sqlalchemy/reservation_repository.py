@@ -98,3 +98,10 @@ class ReservationRepository:
             .filter(Reservation.status == ReservationStatus.ACTIVE, Reservation.reserved_until <= as_of)
             .all()
         )
+
+    def get_active_by_setup_id(self, setup_id: int) -> Optional[Reservation]:
+        return (
+            self._db.query(Reservation)
+            .filter(Reservation.setup_id == setup_id, Reservation.status == ReservationStatus.ACTIVE)
+            .first()
+        )

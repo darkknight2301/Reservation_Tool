@@ -1,18 +1,19 @@
 """
-Swap service: request/approve/reject/cancel single setup swaps, and
-create/approve coordinated multi-node swap mappings (A->B, B->A, C->D).
+Swap service: request/approve/reject/cancel a column-value swap between two
+of the requester's own reserved setups, and create/approve coordinated
+multi-node swap mappings (A->B, B->A, C->D) that relocate reservations.
 """
 import uuid
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from app.core.config import settings
-from app.core.constants import AuditAction, ReservationStatus, SetupStatus, SwapStatus
+from app.core.constants import AnnouncementChannel, AuditAction, ReservationStatus, SetupStatus, SwapStatus
 from app.core.exceptions import (
     AuthorizationError,
     ConflictError,
     NotFoundError,
     SwapMappingValidationError,
+    ValidationAppError,
 )
 from app.models.reservation import Reservation
 from app.models.swap_request import SwapRequest
@@ -22,6 +23,16 @@ from app.repositories.interfaces.i_setup_repository import ISetupRepository
 from app.repositories.interfaces.i_swap_repository import ISwapRepository
 from app.schemas.swap_request import SwapCreateRequest, SwapDecisionRequest, SwapFilter, SwapMappingCreateRequest
 from app.services.audit_service import AuditService
+from app.services.notification_service import NotificationService
+from app.services.template_service import TemplateService
+
+# Fixed Setup columns eligible for a column swap (hardware/asset fields only
+# -- identity fields like ip_address/hostname and lifecycle fields like
+# status/remarks are never swappable).
+SWAPPABLE_SETUP_FIELDS = (
+    "ssd", "hdd", "hardware_info", "capacity", "form_factor",
+    "adapter", "aardvark", "quarch", "apc", "remote_server",
+)
 
 
 def _format_swap_remark(user_email: str, from_hostname: str, to_hostname: str, at: datetime) -> str:
@@ -44,11 +55,15 @@ class SwapService:
         reservation_repository: IReservationRepository,
         setup_repository: ISetupRepository,
         audit_service: AuditService,
+        template_service: Optional[TemplateService] = None,
+        notification_service: Optional[NotificationService] = None,
     ) -> None:
         self._swap_repository = swap_repository
         self._reservation_repository = reservation_repository
         self._setup_repository = setup_repository
         self._audit_service = audit_service
+        self._template_service = template_service
+        self._notification_service = notification_service
 
     def get_by_id(self, swap_id: int) -> SwapRequest:
         swap = self._swap_repository.get_by_id(swap_id)
@@ -64,8 +79,31 @@ class SwapService:
         return self._swap_repository.list(filters, page, page_size)
 
     # ------------------------------------------------------------------
-    # Single 1:1 swap
+    # Single column-value swap between two of the requester's own setups
     # ------------------------------------------------------------------
+
+    def _active_reservation_for_setup(self, setup_id: int) -> Optional[Reservation]:
+        return self._reservation_repository.get_active_by_setup_id(setup_id)
+
+    def _common_swappable_columns(self, setup_a, setup_b) -> List[str]:
+        """
+        Every column name that can legally be swapped between these two
+        setups: the fixed hardware fields (always available on every
+        setup), plus -- when the two setups belong to different products --
+        only the custom template columns present on *both* products'
+        templates (same product: all of that product's custom columns).
+        """
+        columns = list(SWAPPABLE_SETUP_FIELDS)
+        if self._template_service is None:
+            return columns
+
+        names_a = {c.name for c in self._template_service.get_custom_columns(setup_a.product_id)}
+        if setup_a.product_id == setup_b.product_id:
+            columns.extend(sorted(names_a))
+        else:
+            names_b = {c.name for c in self._template_service.get_custom_columns(setup_b.product_id)}
+            columns.extend(sorted(names_a & names_b))
+        return columns
 
     def create(self, payload: SwapCreateRequest, acting_user: User) -> SwapRequest:
         reservation = self._reservation_repository.get_by_id(payload.reservation_id)
@@ -81,18 +119,27 @@ class SwapService:
         requested_setup = self._setup_repository.get_by_id(payload.requested_setup_id)
         if requested_setup is None:
             raise NotFoundError("Setup with id {0} was not found.".format(payload.requested_setup_id))
-        if requested_setup.status != SetupStatus.AVAILABLE:
-            raise ConflictError("Requested setup is not currently AVAILABLE.")
+
+        # Rule: swap must be between two setups the SAME user currently has
+        # reserved -- the target is not "taken", it's the other half of the
+        # exchange.
+        other_reservation = self._active_reservation_for_setup(payload.requested_setup_id)
+        if other_reservation is None or other_reservation.user_id != acting_user.id:
+            raise ConflictError("The requested setup must also be one of your own currently-reserved setups.")
 
         current_setup = self._setup_repository.get_by_id(reservation.setup_id)
-        if settings.SWAP_REQUIRE_SAME_PRODUCT and current_setup.product_id != requested_setup.product_id:
-            raise ConflictError("Requested setup must belong to the same product.")
+        allowed_columns = self._common_swappable_columns(current_setup, requested_setup)
+        if payload.column_name not in allowed_columns:
+            raise ValidationAppError(
+                "'{0}' is not a swappable column common to both setups.".format(payload.column_name)
+            )
 
         swap = SwapRequest(
             reservation_id=reservation.id,
             requester_id=acting_user.id,
             current_setup_id=reservation.setup_id,
             requested_setup_id=payload.requested_setup_id,
+            column_name=payload.column_name,
             status=SwapStatus.PENDING,
             reason=payload.reason,
         )
@@ -102,8 +149,19 @@ class SwapService:
             action=AuditAction.CREATE,
             entity_type="SwapRequest",
             entity_id=created.id,
-            new_value={"reservation_id": reservation.id, "requested_setup_id": payload.requested_setup_id},
+            new_value={
+                "reservation_id": reservation.id, "requested_setup_id": payload.requested_setup_id,
+                "column_name": payload.column_name,
+            },
         )
+
+        if self._notification_service is not None:
+            message = "{0} requested to swap '{1}' between {2} and {3}. Approval needed.".format(
+                acting_user.full_name, payload.column_name, current_setup.hostname, requested_setup.hostname
+            )
+            self._notification_service.broadcast_reservation_event(
+                [AnnouncementChannel.MAIL_LEADS], message, current_setup, acting_user
+            )
         return created
 
     def approve(self, swap_id: int, payload: SwapDecisionRequest, acting_user: User) -> SwapRequest:
@@ -111,31 +169,50 @@ class SwapService:
         if swap.status != SwapStatus.PENDING:
             raise ConflictError("Only a PENDING swap request can be approved.")
 
-        requested_setup = self._setup_repository.get_by_id(swap.requested_setup_id)
-        if requested_setup is None or requested_setup.status != SetupStatus.AVAILABLE:
-            raise ConflictError("Requested setup is no longer AVAILABLE.")
-
-        old_reservation = self._reservation_repository.get_by_id(swap.reservation_id)
         current_setup = self._setup_repository.get_by_id(swap.current_setup_id)
+        requested_setup = self._setup_repository.get_by_id(swap.requested_setup_id)
+        if current_setup is None or requested_setup is None:
+            raise NotFoundError("One of the setups in this swap request no longer exists.")
+
+        # Re-verify both setups are still reserved by the same requester --
+        # a swap never touches reservation/setup status, only the value.
+        current_active = self._active_reservation_for_setup(swap.current_setup_id)
+        requested_active = self._active_reservation_for_setup(swap.requested_setup_id)
+        if (
+            current_active is None or requested_active is None
+            or current_active.user_id != swap.requester_id or requested_active.user_id != swap.requester_id
+        ):
+            raise ConflictError("Both setups must still be reserved by the requester to approve this swap.")
+
+        column_name = swap.column_name
+        if column_name in SWAPPABLE_SETUP_FIELDS:
+            old_value = getattr(current_setup, column_name)
+            value_b = getattr(requested_setup, column_name)
+            setattr(current_setup, column_name, value_b)
+            setattr(requested_setup, column_name, old_value)
+            self._setup_repository.update(current_setup)
+            self._setup_repository.update(requested_setup)
+        elif self._template_service is not None:
+            values_a = self._template_service.get_values_map_for_setup(current_setup.id, current_setup.product_id)
+            values_b = self._template_service.get_values_map_for_setup(requested_setup.id, requested_setup.product_id)
+            old_value = values_a.get(column_name)
+            self._template_service.set_setup_values(
+                current_setup.id, current_setup.product_id, {column_name: values_b.get(column_name)}, acting_user
+            )
+            self._template_service.set_setup_values(
+                requested_setup.id, requested_setup.product_id, {column_name: old_value}, acting_user
+            )
+        else:
+            raise ValidationAppError("Template-aware swap is not configured; cannot swap a custom column.")
+
         now = datetime.utcnow()
-        remark = _format_swap_remark(old_reservation.user.email, current_setup.hostname, requested_setup.hostname, now)
-        carried_remarks = _append_remark(old_reservation.remarks, remark)
-
-        old_reservation.status = ReservationStatus.SWAPPED
-        old_reservation.remarks = carried_remarks
-        self._reservation_repository.update(old_reservation)
-        self._setup_repository.update_status(swap.current_setup_id, SetupStatus.AVAILABLE)
-
-        new_reservation = Reservation(
-            setup_id=swap.requested_setup_id,
-            user_id=swap.requester_id,
-            reserved_from=old_reservation.reserved_from,
-            reserved_until=old_reservation.reserved_until,
-            status=ReservationStatus.ACTIVE,
-            remarks=carried_remarks,
+        remark = _format_swap_remark(
+            swap.requester.email if swap.requester else "unknown", current_setup.hostname, requested_setup.hostname, now
         )
-        created_reservation = self._reservation_repository.create(new_reservation)
-        self._setup_repository.update_status(swap.requested_setup_id, SetupStatus.RESERVED)
+        current_reservation = self._reservation_repository.get_by_id(swap.reservation_id)
+        if current_reservation is not None:
+            current_reservation.remarks = _append_remark(current_reservation.remarks, remark)
+            self._reservation_repository.update(current_reservation)
 
         swap.status = SwapStatus.COMPLETED
         swap.approved_by_id = acting_user.id
@@ -148,15 +225,15 @@ class SwapService:
             action=AuditAction.APPROVE,
             entity_type="SwapRequest",
             entity_id=updated_swap.id,
-            new_value={"new_reservation_id": created_reservation.id},
+            new_value={"column_name": column_name},
         )
         self._audit_service.record(
             user_id=acting_user.id,
             action=AuditAction.SWAP,
-            entity_type="Reservation",
-            entity_id=created_reservation.id,
-            old_value={"setup_id": swap.current_setup_id},
-            new_value={"setup_id": swap.requested_setup_id},
+            entity_type="Setup",
+            entity_id=current_setup.id,
+            old_value={column_name: old_value},
+            new_value={"swapped_with_setup_id": requested_setup.id, "column_name": column_name},
         )
         return updated_swap
 

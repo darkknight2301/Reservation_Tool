@@ -12,7 +12,7 @@ class User(Base):
 
     New users register via ``POST /auth/register`` and land in
     ``UserStatus.PENDING``. A user with ``user:approve`` permission (LEAD,
-    DEVELOPER_LEAD, or OWNER) must approve the account before it can log in.
+    MANAGER, or OWNER) must approve the account before it can log in.
     """
 
     __tablename__ = "users"

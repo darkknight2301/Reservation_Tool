@@ -22,13 +22,13 @@ from app.services.role_lookup_service import RoleLookupService
 
 def _scope_role_names(acting_user: User) -> Optional[List[str]]:
     """
-    LEAD-level approvers may only manage USER/DEVELOPER accounts within
-    their own group; DEVELOPER_LEAD and OWNER manage globally. Returns None
-    for unrestricted (global) scope.
+    LEAD-level approvers may only manage BOT/USER accounts within their own
+    group; MANAGER and OWNER manage globally. Returns None for
+    unrestricted (global) scope.
     """
-    if acting_user.role.name in (RoleName.OWNER, RoleName.DEVELOPER_LEAD):
+    if acting_user.role.name in (RoleName.OWNER, RoleName.MANAGER):
         return None
-    return [RoleName.USER, RoleName.DEVELOPER]
+    return [RoleName.BOT, RoleName.USER]
 
 
 class UserService:
@@ -207,7 +207,7 @@ class UserService:
             raise AuthorizationError("You may only approve users within your own group.")
 
         if payload.approve:
-            role_name = payload.role_name or RoleName.USER
+            role_name = payload.role_name or RoleName.BOT
             role = self._role_lookup_service.get_role_by_name(role_name)
             user.status = UserStatus.APPROVED
             user.role_id = role.id

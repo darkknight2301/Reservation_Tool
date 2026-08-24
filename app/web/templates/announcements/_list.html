@@ -1,4 +1,4 @@
-{% for a in announcements %}
+{% macro announcement_card(a) %}
 <div class="card rms-card rms-announcement rms-priority-{{ a.priority }} mb-2">
     <div class="card-body py-2">
         <div class="d-flex justify-content-between align-items-start">
@@ -28,6 +28,25 @@
         </div>
     </div>
 </div>
+{% endmacro %}
+
+{% if announcements %}
+    {# Sections are always shown critical-to-low; each priority is independently collapsible. #}
+    {% for priority in ["CRITICAL", "HIGH", "NORMAL", "LOW"] %}
+    {% set items = announcements|selectattr("priority", "equalto", priority)|list %}
+    {% if items %}
+    <div class="mb-2">
+        <button class="btn btn-sm rms-priority-section-toggle rms-priority-{{ priority }} w-100 text-start d-flex justify-content-between align-items-center"
+                type="button" data-bs-toggle="collapse" data-bs-target="#announcementSection{{ priority }}"
+                aria-expanded="{{ 'true' if priority in ('CRITICAL', 'HIGH') else 'false' }}">
+            <span><i class="bi bi-chevron-down me-1"></i>{{ priority|title }} ({{ items|length }})</span>
+        </button>
+        <div class="collapse {{ 'show' if priority in ('CRITICAL', 'HIGH') else '' }} mt-2" id="announcementSection{{ priority }}">
+            {% for a in items %}{{ announcement_card(a) }}{% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
 {% else %}
 <div class="alert alert-info">No announcements found.</div>
-{% endfor %}
+{% endif %}

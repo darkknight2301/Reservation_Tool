@@ -191,8 +191,13 @@ def get_swap_service(
     reservation_repository: ReservationRepository = Depends(get_reservation_repository),
     setup_repository: SetupRepository = Depends(get_setup_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    template_service: TemplateService = Depends(get_template_service),
+    notification_service: NotificationService = Depends(get_notification_service),
 ) -> SwapService:
-    return SwapService(swap_repository, reservation_repository, setup_repository, audit_service)
+    return SwapService(
+        swap_repository, reservation_repository, setup_repository, audit_service,
+        template_service, notification_service,
+    )
 
 
 def get_announcement_service(

@@ -1,6 +1,6 @@
 # Reservation Management System — API Guide
 
-Base path: `/api/v1`. Auth: Bearer JWT access token (`Authorization: Bearer <token>`), issued by `/auth/login`, refreshed via `/auth/refresh`. RBAC is enforced per-endpoint via permission codes (see the role matrix in USER_GUIDE.md §3 — note the **User** role is view-only). Errors return `{"error": {"message": "...", ...}}` with an appropriate HTTP status.
+Base path: `/api/v1`. Auth: Bearer JWT access token (`Authorization: Bearer <token>`), issued by `/auth/login`, refreshed via `/auth/refresh`. RBAC is enforced per-endpoint via permission codes (see the role matrix in USER_GUIDE.md §3 — note the **Bot** role is view-only; roles were renamed from User/Developer/Lead/Developer Lead/Owner to Bot/User/Lead/Manager/Owner). Errors return `{"error": {"message": "...", ...}}` with an appropriate HTTP status.
 
 ## Quick Reference
 
@@ -44,7 +44,7 @@ Base path: `/api/v1`. Auth: Bearer JWT access token (`Authorization: Bearer <tok
 | GET | /reservations/{id} | Get reservation | Yes | reservation:view |
 | PATCH | /reservations/{id}/cancel | Cancel (unreserve) | Yes | owner (cancel_own) or reservation:cancel_any |
 | GET | /swaps | List swap requests | Yes | swap:view |
-| POST | /swaps | Request a swap | Yes | swap:request |
+| POST | /swaps | Request a column-value swap between two of your own reserved setups | Yes | swap:request |
 | GET | /swaps/{id} | Get swap request | Yes | swap:view |
 | PATCH | /swaps/{id}/approve | Approve pending swap | Yes | swap:approve |
 | PATCH | /swaps/{id}/reject | Reject pending swap | Yes | swap:approve |
@@ -119,11 +119,17 @@ Under `/products/{id}/template...`. `GET` returns `{product_id, mandatory_column
 
 ## Swap
 
-`POST /swaps` body: `{reservation_id, requested_setup_id, reason?}` — creates a PENDING swap request for the caller's own reservation (`swap:request`). `PATCH /swaps/{id}/approve` / `/reject` (`swap:approve`) body `{reason?}`. `PATCH /swaps/{id}/cancel` — the requester withdraws their own still-pending request. `POST /swaps/mapping` (`swap:approve`) body `{mappings: [{reservation_id, target_setup_id}, ...] (min 2), reason?}` — every reservation and every target setup must appear exactly once; creates one PENDING swap per mapping entry as a batch. `PATCH /swaps/mapping/{batch_id}/approve` approves every swap in that batch atomically.
+A swap exchanges the value of **one field** between two setups the requester currently has reserved -- it never relocates a reservation.
+
+`POST /swaps` body: `{reservation_id, requested_setup_id, column_name, reason?}` (`swap:request`). `reservation_id` must be the caller's own ACTIVE reservation; `requested_setup_id` must also currently be reserved by the *same* caller (self-reserved rule); `column_name` must be one of the fixed hardware fields (`ssd, hdd, hardware_info, capacity, form_factor, adapter, aardvark, quarch, apc, remote_server`) or, when the two setups belong to different products, a custom template column present on *both* products. 422/409 if any of that doesn't hold. On success, a PENDING swap is created and Leads+ are notified (`MAIL_LEADS`) that approval is needed.
+
+`PATCH /swaps/{id}/approve` (`swap:approve`) re-verifies both setups are still self-reserved by the requester, then swaps `column_name`'s value between the two Setup rows (or, for a custom column, the two `SetupCustomFieldValue` rows) and marks the request COMPLETED. Neither reservation nor setup status changes. `PATCH /swaps/{id}/reject` (`swap:approve`) body `{reason?}`. `PATCH /swaps/{id}/cancel` — the requester withdraws their own still-pending request.
+
+**Separately**, `POST /swaps/mapping` (`swap:approve`) body `{mappings: [{reservation_id, target_setup_id}, ...] (min 2), reason?}` is an unrelated, coordinated *reservation-relocation* workflow: every reservation and every target setup must appear exactly once; creates one PENDING swap per mapping entry as a batch. `PATCH /swaps/mapping/{batch_id}/approve` approves every swap in that batch atomically (this path still relocates reservations as before).
 
 ## Announcements
 
-`GET` (list/single) needs `announcement:view` (every role has it); create/update/delete need `announcement:manage` (Developer Lead/Owner only — Lead can view but not manage). Fields: `title, message, priority, start_date, end_date`.
+`GET` (list/single) needs `announcement:view` (every role has it); create/update/delete need `announcement:manage` (Manager/Owner only — Lead can view but not manage). Fields: `title, message, priority, start_date, end_date`. Listed sorted by priority severity (CRITICAL > HIGH > NORMAL > LOW), then most recent first. The scheduler also creates CRITICAL announcements automatically when a reservation expires without being unreserved.
 
 ## Groups
 
@@ -146,8 +152,8 @@ All return a downloadable `.xlsx` `FileResponse`. Audit: EXPORT.
 
 ## Logs / Audit
 
-- `GET /audit-logs` (`audit:view` — Developer Lead/Owner only): filter by `entity_type, entity_id, user_id, action` + pagination. Returns actor, action, entity, old/new value snapshot, timestamp.
-- `GET /dev-logs/tree` / `GET /dev-logs/download?path=...` (`logs:view` — Lead, Developer Lead, Owner): browse/download rotated Excel import/export transaction log files. `download` resolves `path` against the logs directory only — traversal outside it is rejected.
+- `GET /audit-logs` (`audit:view` — Manager/Owner only): filter by `entity_type, entity_id, user_id, action` + pagination. Returns actor, action, entity, old/new value snapshot, timestamp.
+- `GET /dev-logs/tree` / `GET /dev-logs/download?path=...` (`logs:view` — Manager, Owner): browse/download rotated Excel import/export transaction log files. `download` resolves `path` against the logs directory only — traversal outside it is rejected. **Lead no longer has this permission** (removed in the latest role rework).
 
 ## Status Codes
 
@@ -166,8 +172,8 @@ All return a downloadable `.xlsx` `FileResponse`. Audit: EXPORT.
 
 - **Login → browse setups**: `POST /auth/login` → `GET /setups?product_id=1`
 - **Reserve**: `GET /setups?product_id=1&status=AVAILABLE` → `POST /reservations` (once per setup)
-- **Swap**: `POST /swaps` → `PATCH /swaps/{id}/approve`
-- **Coordinated swap**: `POST /swaps/mapping` → `PATCH /swaps/mapping/{batch_id}/approve`
+- **Swap a column between two of your own setups**: `POST /swaps` (`reservation_id`, `requested_setup_id`, `column_name`) → `PATCH /swaps/{id}/approve`
+- **Coordinated reservation relocation (separate workflow)**: `POST /swaps/mapping` → `PATCH /swaps/mapping/{batch_id}/approve`
 - **Unreserve**: `PATCH /reservations/{id}/cancel`
 - **Design a template then import**: `POST /products/{id}/template/columns` (repeat) → `POST /imports/setups/product/{id}/detect-columns` → `POST /imports/setups/product/{id}?accept_new_columns=true`
 - **Export current data**: `POST /exports/setups/product/{id}`

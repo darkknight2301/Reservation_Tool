@@ -173,11 +173,14 @@ class ReservationService:
     def sweep_expired_reservations(self, as_of: datetime) -> int:
         """
         Background-job entry point: transition every ACTIVE reservation past
-        its ``reserved_until`` to COMPLETED, and free the corresponding
-        setup back to AVAILABLE. Returns the number of reservations swept.
+        its ``reserved_until`` to COMPLETED, free the corresponding setup
+        back to AVAILABLE, and -- since it was not manually unreserved in
+        time -- notify the setup's owner and the reserving user (CRITICAL
+        wall announcement + email). Returns the number of reservations swept.
         """
         expired = self._reservation_repository.list_expired_active(as_of)
         for reservation in expired:
+            setup = self._setup_repository.get_by_id(reservation.setup_id)
             reservation.status = ReservationStatus.COMPLETED
             self._reservation_repository.update(reservation)
             self._setup_repository.update_status(reservation.setup_id, SetupStatus.AVAILABLE)
@@ -188,4 +191,6 @@ class ReservationService:
                 entity_id=reservation.id,
                 new_value={"status": ReservationStatus.COMPLETED, "reason": "scheduled_expiry_sweep"},
             )
+            if self._notification_service is not None and setup is not None:
+                self._notification_service.notify_reservation_expired(reservation, setup)
         return len(expired)

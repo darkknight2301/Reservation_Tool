@@ -15,8 +15,11 @@ from app.repositories.sqlalchemy.audit_repository import AuditLogRepository
 from app.repositories.sqlalchemy.reservation_repository import ReservationRepository
 from app.repositories.sqlalchemy.role_repository import RoleRepository
 from app.repositories.sqlalchemy.setup_repository import SetupRepository
+from app.repositories.sqlalchemy.user_repository import UserRepository
 from app.services.announcement_service import AnnouncementService
 from app.services.audit_service import AuditService
+from app.services.email_service import EmailService
+from app.services.notification_service import NotificationService
 from app.services.reservation_service import ReservationService
 from app.services.role_lookup_service import RoleLookupService
 from app.utils.datetime_utils import utc_now
@@ -27,13 +30,16 @@ _scheduler = BackgroundScheduler(timezone="UTC")
 
 
 def _run_reservation_sweep() -> None:
-    """Job: complete ACTIVE reservations past their reserved_until."""
+    """Job: complete ACTIVE reservations past their reserved_until, and notify on expiry."""
     db = SessionLocal()
     try:
         audit_service = AuditService(AuditLogRepository(db))
         role_lookup_service = RoleLookupService(RoleRepository(db))
+        announcement_service = AnnouncementService(AnnouncementRepository(db), audit_service)
+        notification_service = NotificationService(announcement_service, EmailService(), UserRepository(db))
         service = ReservationService(
-            ReservationRepository(db), SetupRepository(db), role_lookup_service, audit_service
+            ReservationRepository(db), SetupRepository(db), role_lookup_service, audit_service,
+            notification_service=notification_service,
         )
         swept = service.sweep_expired_reservations(utc_now())
         db.commit()

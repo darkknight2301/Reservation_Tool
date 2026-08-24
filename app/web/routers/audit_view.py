@@ -34,8 +34,8 @@ def _load_logs_context(request: Request, filters: AuditLogFilter, page: int, pag
 def logs_dashboard_page(
     request: Request,
     entity_type: Optional[str] = None,
-    entity_id: Optional[int] = None,
-    user_id: Optional[int] = None,
+    entity_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     action: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
@@ -43,7 +43,12 @@ def logs_dashboard_page(
     audit_service: AuditService = Depends(get_audit_service),
 ):
     """Render the full Logs Dashboard screen."""
-    filters = AuditLogFilter(entity_type=entity_type, entity_id=entity_id, user_id=user_id, action=action)
+    filters = AuditLogFilter(
+        entity_type=entity_type or None,
+        entity_id=int(entity_id) if entity_id else None,
+        user_id=int(user_id) if user_id else None,
+        action=action or None,
+    )
     context = _load_logs_context(request, filters, page, page_size, current_user, audit_service)
     context.update({"actions": [AuditAction.CREATE, AuditAction.UPDATE, AuditAction.DELETE, AuditAction.APPROVE,
                                 AuditAction.REJECT, AuditAction.LOGIN, AuditAction.LOGIN_FAILED, AuditAction.LOGOUT,
@@ -55,8 +60,8 @@ def logs_dashboard_page(
 def logs_table_partial(
     request: Request,
     entity_type: Optional[str] = None,
-    entity_id: Optional[int] = None,
-    user_id: Optional[int] = None,
+    entity_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     action: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
@@ -64,6 +69,11 @@ def logs_table_partial(
     audit_service: AuditService = Depends(get_audit_service),
 ):
     """HTMX partial: re-render the audit log table on filter/page change."""
-    filters = AuditLogFilter(entity_type=entity_type, entity_id=entity_id, user_id=user_id, action=action)
+    filters = AuditLogFilter(
+        entity_type=entity_type or None,
+        entity_id=int(entity_id) if entity_id else None,
+        user_id=int(user_id) if user_id else None,
+        action=action or None,
+    )
     context = _load_logs_context(request, filters, page, page_size, current_user, audit_service)
     return templates.TemplateResponse("admin/_logs_list.html", context)

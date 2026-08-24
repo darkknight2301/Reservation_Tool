@@ -132,6 +132,13 @@ body.rms-loading .rms-overlay-spinner {
 .rms-announcement.rms-priority-HIGH { border-left-color: #fd7e14; }
 .rms-announcement.rms-priority-CRITICAL { border-left-color: #dc3545; }
 
+.rms-priority-section-toggle { border: 1px solid var(--bs-border-color); border-radius: var(--rms-radius); color: #fff; }
+.rms-priority-section-toggle.rms-priority-LOW { background-color: #6c757d; }
+.rms-priority-section-toggle.rms-priority-NORMAL { background-color: #0d6efd; }
+.rms-priority-section-toggle.rms-priority-HIGH { background-color: #fd7e14; }
+.rms-priority-section-toggle.rms-priority-CRITICAL { background-color: #dc3545; }
+.rms-priority-section-toggle[aria-expanded="false"] .bi-chevron-down { transform: rotate(-90deg); display: inline-block; }
+
 /* ---------- Misc ---------- */
 .rms-checkbox-disabled {
     opacity: 0.35;

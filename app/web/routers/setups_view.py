@@ -37,7 +37,7 @@ from app.services.group_service import GroupService
 from app.services.product_service import ProductService
 from app.services.reservation_service import ReservationService
 from app.services.setup_service import SetupService
-from app.services.swap_service import SwapService
+from app.services.swap_service import SWAPPABLE_SETUP_FIELDS, SwapService
 from app.services.template_service import TemplateService
 from app.services.user_service import UserService
 from app.utils.pagination import total_pages as compute_total_pages
@@ -117,13 +117,13 @@ def _load_table_context(
 @router.get("/setups")
 def setups_page(
     request: Request,
-    product_id: Optional[int] = None,
-    group_id: Optional[int] = None,
+    product_id: Optional[str] = None,
+    group_id: Optional[str] = None,
     status: Optional[str] = None,
     location: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
-    page_size: int = 25,
+    page_size: int = 200,
     current_user: User = Depends(get_current_web_user),
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
@@ -132,12 +132,21 @@ def setups_page(
     template_service: TemplateService = Depends(get_template_service),
 ):
     """Render the full reservation table screen (initial page load)."""
-    filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location, search=search)
+    products, _ = product_service.list(page=1, page_size=200)
+    groups, _ = group_service.list(page=1, page_size=200)
+
+    # On first load (no explicit selection in the URL yet), default to the
+    # first Product and first Group rather than showing "All" -- same
+    # dropdown-default behavior for both filters.
+    resolved_product_id = int(product_id) if product_id else (products[0].id if products else None)
+    resolved_group_id = int(group_id) if group_id else (groups[0].id if groups else None)
+
+    filters = SetupFilter(
+        product_id=resolved_product_id, group_id=resolved_group_id, status=status, location=location, search=search
+    )
     context = _load_table_context(
         request, filters, page, page_size, current_user, setup_service, reservation_service, template_service
     )
-    products, _ = product_service.list(page=1, page_size=200)
-    groups, _ = group_service.list(page=1, page_size=200)
     context.update({"products": products, "groups": groups})
     return templates.TemplateResponse("setups/table.html", context)
 
@@ -145,20 +154,24 @@ def setups_page(
 @router.get("/setups/table")
 def setups_table_partial(
     request: Request,
-    product_id: Optional[int] = None,
-    group_id: Optional[int] = None,
+    product_id: Optional[str] = None,
+    group_id: Optional[str] = None,
     status: Optional[str] = None,
     location: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
-    page_size: int = 25,
+    page_size: int = 200,
     current_user: User = Depends(get_current_web_user),
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
     template_service: TemplateService = Depends(get_template_service),
 ):
     """HTMX partial: re-render just the table body + pagination on filter/search/page change."""
-    filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location, search=search)
+    filters = SetupFilter(
+        product_id=int(product_id) if product_id else None,
+        group_id=int(group_id) if group_id else None,
+        status=status, location=location, search=search,
+    )
     context = _load_table_context(
         request, filters, page, page_size, current_user, setup_service, reservation_service, template_service
     )
@@ -214,7 +227,7 @@ def reserve_submit(
             errors.append("Setup {0}: {1}".format(setup_id, exc.message))
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
+    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
 
     if errors:
@@ -232,16 +245,22 @@ def swap_dialog(
     reservation_service: ReservationService = Depends(get_reservation_service),
     setup_service: SetupService = Depends(get_setup_service),
 ):
-    """Render the Swap dialog: pick a replacement AVAILABLE setup of the same product."""
+    """Render the Swap dialog: pick another of your own reserved setups, and the column to exchange."""
     reservation = reservation_service.get_by_id(reservation_id)
     current_setup = setup_service.get_by_id(reservation.setup_id)
-    candidate_setups, _ = setup_service.list(
-        SetupFilter(product_id=current_setup.product_id, status=SetupStatus.AVAILABLE), page=1, page_size=200
+
+    my_reservations, _ = reservation_service.list(
+        ReservationFilter(user_id=current_user.id, status=ReservationStatus.ACTIVE), page=1, page_size=200
     )
-    candidate_setups = [s for s in candidate_setups if s.id != current_setup.id]
+    candidate_setups = [
+        setup_service.get_by_id(r.setup_id) for r in my_reservations if r.setup_id != current_setup.id
+    ]
 
     context = base_context(request, current_user)
-    context.update({"reservation": reservation, "current_setup": current_setup, "candidate_setups": candidate_setups})
+    context.update({
+        "reservation": reservation, "current_setup": current_setup, "candidate_setups": candidate_setups,
+        "swappable_columns": SWAPPABLE_SETUP_FIELDS,
+    })
     return templates.TemplateResponse("setups/swap_dialog.html", context)
 
 
@@ -250,6 +269,7 @@ def swap_submit(
     request: Request,
     reservation_id: int = Form(...),
     requested_setup_id: int = Form(...),
+    column_name: str = Form(...),
     reason: str = Form(default=""),
     current_user: User = Depends(get_current_web_user),
     swap_service: SwapService = Depends(get_swap_service),
@@ -259,13 +279,16 @@ def swap_submit(
     """Submit a swap request for approval."""
     message, message_type = "Swap request submitted for approval.", "success"
     try:
-        payload = SwapCreateRequest(reservation_id=reservation_id, requested_setup_id=requested_setup_id, reason=reason or None)
+        payload = SwapCreateRequest(
+            reservation_id=reservation_id, requested_setup_id=requested_setup_id,
+            column_name=column_name, reason=reason or None,
+        )
         swap_service.create(payload, current_user)
     except AppError as exc:
         message, message_type = exc.message, "error"
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
+    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
     response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
@@ -314,7 +337,7 @@ def unreserve_submit(
             errors.append("Reservation {0}: {1}".format(reservation_id, exc.message))
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
+    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
     if errors:
         response.headers["HX-Trigger"] = hx_trigger("; ".join(errors), "warning", close_dialog=False)
@@ -325,8 +348,8 @@ def unreserve_submit(
 
 @router.get("/setups/export")
 def export_setups_web(
-    product_id: Optional[int] = None,
-    group_id: Optional[int] = None,
+    product_id: Optional[str] = None,
+    group_id: Optional[str] = None,
     status: Optional[str] = None,
     location: Optional[str] = None,
     search: Optional[str] = None,
@@ -334,7 +357,11 @@ def export_setups_web(
     export_service: ExportService = Depends(get_export_service),
 ):
     """Export the current Setup filter view to Excel (cookie-authed browser download)."""
-    filters = SetupFilter(product_id=product_id, group_id=group_id, status=status, location=location, search=search)
+    filters = SetupFilter(
+        product_id=int(product_id) if product_id else None,
+        group_id=int(group_id) if group_id else None,
+        status=status, location=location, search=search,
+    )
     export_log = export_service.export_setups(filters, current_user)
     return FileResponse(
         path=export_log.file_path,
@@ -425,7 +452,7 @@ async def setup_edit_save(
         message, message_type = str(exc), "error"
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 25, current_user, setup_service, reservation_service)
+    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
     response = templates.TemplateResponse("setups/_table_body.html", context)
     response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response

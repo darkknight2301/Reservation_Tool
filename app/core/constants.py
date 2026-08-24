@@ -8,13 +8,27 @@ from typing import Dict, List
 
 
 class RoleName:
-    """Canonical role names. Stored in the ``roles.name`` column."""
+    """
+    Canonical role names, stored in the ``roles.name`` column.
 
-    USER = "USER"
-    DEVELOPER = "DEVELOPER"
-    LEAD = "LEAD"
-    DEVELOPER_LEAD = "DEVELOPER_LEAD"
-    OWNER = "OWNER"
+    Renamed (this revision): the tier historically called "User" is now
+    "Bot", "Developer" is now "User", and "Developer Lead" is now
+    "Manager" (Lead and Owner are unchanged). The attribute names below
+    are kept stable for backward compatibility -- each still identifies
+    the exact same permission tier as before; only the stored/displayed
+    string value changed.
+    """
+
+    USER = "BOT"                # formerly the "USER" role; view-only tier
+    DEVELOPER = "USER"           # formerly the "DEVELOPER" role; can reserve/swap-request/export
+    LEAD = "LEAD"                 # unchanged
+    DEVELOPER_LEAD = "MANAGER"     # formerly the "DEVELOPER_LEAD" role; full admin short of Owner
+    OWNER = "OWNER"                # unchanged
+
+    # Preferred names going forward -- identical values to their legacy
+    # counterparts above, kept in sync automatically.
+    BOT = USER
+    MANAGER = DEVELOPER_LEAD
 
     ALL = (USER, DEVELOPER, LEAD, DEVELOPER_LEAD, OWNER)
 
@@ -90,14 +104,14 @@ class AnnouncementChannel:
 # Expressed as data (not code branches) so that changing a role's
 # capabilities is a seed-data change, not a code change.
 DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
-    RoleName.USER: [
+    RoleName.USER: [  # "Bot": view-only
         PermissionCode.PRODUCT_VIEW,
         PermissionCode.GROUP_VIEW,
         PermissionCode.RESERVATION_VIEW,
         PermissionCode.SWAP_VIEW,
         PermissionCode.ANNOUNCEMENT_VIEW,
     ],
-    RoleName.DEVELOPER: [
+    RoleName.DEVELOPER: [  # "User": can reserve/swap-request/export
         PermissionCode.PRODUCT_VIEW,
         PermissionCode.GROUP_VIEW,
         PermissionCode.RESERVATION_CREATE,
@@ -121,11 +135,11 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PermissionCode.SWAP_APPROVE,
         PermissionCode.SWAP_VIEW,
         PermissionCode.ANNOUNCEMENT_VIEW,
-        PermissionCode.LOGS_VIEW,
         PermissionCode.EXPORT_RUN,
         PermissionCode.IMPORT_RUN,
+        # LOGS_VIEW intentionally NOT granted -- Lead no longer sees Developer Logs.
     ],
-    RoleName.DEVELOPER_LEAD: [
+    RoleName.DEVELOPER_LEAD: [  # "Manager": full admin short of Owner
         PermissionCode.USER_MANAGE,
         PermissionCode.USER_APPROVE,
         PermissionCode.USER_VIEW,

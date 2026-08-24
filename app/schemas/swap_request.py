@@ -8,10 +8,11 @@ from app.core.constants import SwapStatus
 
 
 class SwapCreateRequest(BaseModel):
-    """Payload for requesting a swap of an active reservation's setup."""
+    """Payload for requesting a swap: exchange one field's value between two of the requester's own reserved setups."""
 
     reservation_id: int
     requested_setup_id: int
+    column_name: str = Field(..., min_length=1, max_length=100)
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
@@ -55,6 +56,7 @@ class SwapResponse(BaseModel):
     requester_id: int
     current_setup_id: int
     requested_setup_id: int
+    column_name: Optional[str] = None
     status: str
     reason: Optional[str] = None
     batch_id: Optional[str] = None

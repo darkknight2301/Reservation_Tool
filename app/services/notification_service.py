@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from app.core.constants import AnnouncementChannel, AnnouncementPriority, RoleName, UserStatus
+from app.models.reservation import Reservation
 from app.models.setup import Setup
 from app.models.user import User
 from app.repositories.interfaces.i_user_repository import IUserRepository
@@ -18,7 +19,7 @@ from app.schemas.user import UserFilter
 from app.services.announcement_service import AnnouncementService
 from app.services.email_service import EmailService
 
-_LEAD_ROLE_NAMES = (RoleName.LEAD, RoleName.DEVELOPER_LEAD, RoleName.OWNER)
+_LEAD_ROLE_NAMES = (RoleName.LEAD, RoleName.MANAGER, RoleName.OWNER)
 
 
 class NotificationService:
@@ -74,6 +75,41 @@ class NotificationService:
             return []
         users, _ = self._user_repository.list(UserFilter(group_id=group_id, status=UserStatus.APPROVED), page=1, page_size=1000)
         return [u.email for u in users if u.role.name in _LEAD_ROLE_NAMES]
+
+    def notify_reservation_expired(self, reservation, setup: Setup) -> None:
+        """
+        System-triggered (background sweep): a reservation's window elapsed
+        without the user unreserving it. Posts a CRITICAL wall announcement
+        and emails the setup's owner and the reserving user directly.
+        """
+        subject = "Reservation expired: {0}".format(setup.hostname)
+        reserving_user = reservation.user
+        text = (
+            "The reservation for {0} ({1}) by {2} passed its end time ({3}) without being "
+            "unreserved. The setup has been automatically released back to AVAILABLE."
+        ).format(
+            setup.hostname, setup.ip_address,
+            reserving_user.full_name if reserving_user else "the reserving user",
+            reservation.reserved_until,
+        )
+
+        actor = setup.owner or reserving_user
+        if actor is not None:
+            self._announcement_service.create(
+                AnnouncementCreateRequest(
+                    title=subject, message=text, priority=AnnouncementPriority.CRITICAL,
+                    start_date=datetime.utcnow(), end_date=datetime.utcnow() + timedelta(days=7),
+                ),
+                actor,
+            )
+
+        recipients = []
+        if setup.owner and setup.owner.email:
+            recipients.append(setup.owner.email)
+        if reserving_user and reserving_user.email and reserving_user.email not in recipients:
+            recipients.append(reserving_user.email)
+        if recipients:
+            self._email_service.send_email(recipients, subject, text)
 
     def _group_member_emails(self, group_id: Optional[int]) -> List[str]:
         if group_id is None:

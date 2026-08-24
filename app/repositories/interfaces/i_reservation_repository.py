@@ -34,3 +34,6 @@ class IReservationRepository(Protocol):
 
     def list_expired_active(self, as_of: datetime) -> List[Reservation]:
         ...
+
+    def get_active_by_setup_id(self, setup_id: int) -> Optional[Reservation]:
+        ...

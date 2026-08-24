@@ -39,7 +39,7 @@ class UserCreateRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     full_name: str = Field(..., min_length=1, max_length=150)
-    role_name: str = Field(default=RoleName.USER)
+    role_name: str = Field(default=RoleName.BOT)
     group_id: Optional[int] = None
     group_ids: Optional[List[int]] = None
 

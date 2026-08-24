@@ -7,7 +7,12 @@ from app.db.base import Base
 
 
 class SwapRequest(Base):
-    """A request to move an active reservation from one setup to another."""
+    """
+    A request to exchange one field's recorded value (e.g. an SSD) between
+    two of the requester's own currently-reserved setups. Neither setup's
+    reservation is affected -- only that one field's value moves between
+    the two Setup rows once the request is approved.
+    """
 
     __tablename__ = "swap_requests"
 
@@ -16,6 +21,11 @@ class SwapRequest(Base):
     requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     current_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=False)
     requested_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=False)
+
+    # The field being exchanged between current_setup and requested_setup:
+    # either a fixed Setup column name (e.g. "ssd") or a custom template
+    # column name, common to both setups' products when they differ.
+    column_name = Column(String(100), nullable=True)
 
     status = Column(String(20), nullable=False, default=SwapStatus.PENDING, index=True)
     reason = Column(String(500), nullable=True)

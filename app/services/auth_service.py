@@ -71,7 +71,7 @@ class AuthService:
         if self._user_repository.get_by_email(payload.email) is not None:
             raise ConflictError("Email is already registered.", details={"field": "email"})
 
-        default_role = self._role_lookup_service.get_role_by_name(RoleName.USER)
+        default_role = self._role_lookup_service.get_role_by_name(RoleName.BOT)
         primary_group_id = payload.group_id
         if primary_group_id is None and payload.group_ids:
             primary_group_id = payload.group_ids[0]
