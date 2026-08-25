@@ -85,7 +85,7 @@ A swap exchanges one field's recorded value (e.g. an SSD) between two setups **y
 
 - **Rules**: both the current setup and the target setup must currently be reserved by you. You pick which column to exchange — one of the fixed hardware fields (SSD, HDD, Hardware Info, Capacity, Form Factor, Adapter, Aardvark, Quarch, APC, Remote Server), or, if the two setups belong to different products, a custom column that exists on **both** products' templates.
 - **Request** (`swap:request` — User role or above): open Swap from your reservation, pick the other setup and the column, optionally add a reason. Starts **PENDING**; a notification is sent for approval.
-- **Approve / reject** (`swap:approve` — Lead role or above): review pending requests; approving exchanges the column's value between the two setups (neither reservation changes).
+- **Approve / reject** (`swap:approve` — Lead role or above): review pending requests; approving exchanges the column's value between the two setups (neither reservation changes). The setup's Remarks (visible to everyone in the Setup Table) get a line recording exactly what was swapped and its original value, so it can be restored later via Setup Edit if needed.
 - **Cancel**: the requester can cancel their own still-pending swap request.
 - **Coordinated multi-setup swap mapping** (`swap:approve` — Lead role or above, via the swap-mapping screen): a separate, unrelated workflow for relocating several reservations across setups at once — build a set of moves (e.g. reservation A → setup B, reservation B → setup A) where every reservation and every target setup appears exactly once, submitted and approved as one batch.
 

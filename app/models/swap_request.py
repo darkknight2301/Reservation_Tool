@@ -27,6 +27,12 @@ class SwapRequest(Base):
     # column name, common to both setups' products when they differ.
     column_name = Column(String(100), nullable=True)
 
+    # Captured at approval time, before the exchange -- lets anyone with
+    # ``swap:view`` (every role) see what each setup's value was before the
+    # swap, so it can be restored later (e.g. via Setup Edit) if needed.
+    previous_current_value = Column(String(500), nullable=True)
+    previous_requested_value = Column(String(500), nullable=True)
+
     status = Column(String(20), nullable=False, default=SwapStatus.PENDING, index=True)
     reason = Column(String(500), nullable=True)
     batch_id = Column(String(36), nullable=True, index=True)

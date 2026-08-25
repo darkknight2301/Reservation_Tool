@@ -57,6 +57,8 @@ class SwapResponse(BaseModel):
     current_setup_id: int
     requested_setup_id: int
     column_name: Optional[str] = None
+    previous_current_value: Optional[str] = None
+    previous_requested_value: Optional[str] = None
     status: str
     reason: Optional[str] = None
     batch_id: Optional[str] = None

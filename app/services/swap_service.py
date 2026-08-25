@@ -35,9 +35,26 @@ SWAPPABLE_SETUP_FIELDS = (
 )
 
 
-def _format_swap_remark(user_email: str, from_hostname: str, to_hostname: str, at: datetime) -> str:
-    """Build the required swap history line: 'user@mail.com swapped drive from A to B at HH:MM DD/MM/YYYY'."""
-    return "{0} swapped drive from {1} to {2} at {3}".format(
+def _format_swap_remark(
+    user_email: str, from_hostname: str, to_hostname: str, column_name: str, old_value, new_value, at: datetime
+) -> str:
+    """
+    Build the swap history line appended to the reservation's remarks (and
+    thus visible to every viewer via the Setup Table's Remarks column):
+    who swapped what column, between which setups, the original vs new
+    value (so it can be restored later), and when.
+    """
+    return "{0} swapped '{1}' between {2} and {3} ({4} -> {5}) at {6}".format(
+        user_email, column_name, from_hostname, to_hostname,
+        old_value if old_value is not None else "(empty)",
+        new_value if new_value is not None else "(empty)",
+        at.strftime("%H:%M %d/%m/%Y"),
+    )
+
+
+def _format_relocation_remark(user_email: str, from_hostname: str, to_hostname: str, at: datetime) -> str:
+    """Build the reservation-relocation history line used by the multi-node swap mapping flow."""
+    return "{0} relocated reservation from {1} to {2} at {3}".format(
         user_email, from_hostname, to_hostname, at.strftime("%H:%M %d/%m/%Y")
     )
 
@@ -196,8 +213,9 @@ class SwapService:
             values_a = self._template_service.get_values_map_for_setup(current_setup.id, current_setup.product_id)
             values_b = self._template_service.get_values_map_for_setup(requested_setup.id, requested_setup.product_id)
             old_value = values_a.get(column_name)
+            value_b = values_b.get(column_name)
             self._template_service.set_setup_values(
-                current_setup.id, current_setup.product_id, {column_name: values_b.get(column_name)}, acting_user
+                current_setup.id, current_setup.product_id, {column_name: value_b}, acting_user
             )
             self._template_service.set_setup_values(
                 requested_setup.id, requested_setup.product_id, {column_name: old_value}, acting_user
@@ -205,16 +223,24 @@ class SwapService:
         else:
             raise ValidationAppError("Template-aware swap is not configured; cannot swap a custom column.")
 
+        # Record what each setup's value was *before* the exchange -- visible
+        # to anyone with swap:view (every role) via SwapResponse, so the
+        # original configuration can be restored later (e.g. via Setup Edit)
+        # even without digging through the Manager/Owner-only audit log.
+        swap.previous_current_value = str(old_value) if old_value is not None else None
+        swap.previous_requested_value = str(value_b) if value_b is not None else None
+
         now = datetime.utcnow()
         remark = _format_swap_remark(
-            swap.requester.email if swap.requester else "unknown", current_setup.hostname, requested_setup.hostname, now
+            swap.requester.email if swap.requester else "unknown", current_setup.hostname, requested_setup.hostname,
+            column_name, old_value, value_b, now,
         )
         current_reservation = self._reservation_repository.get_by_id(swap.reservation_id)
         if current_reservation is not None:
             current_reservation.remarks = _append_remark(current_reservation.remarks, remark)
             self._reservation_repository.update(current_reservation)
 
-        swap.status = SwapStatus.COMPLETED
+        swap.status = SwapStatus.APPROVED
         swap.approved_by_id = acting_user.id
         if payload.reason:
             swap.reason = payload.reason
@@ -382,7 +408,7 @@ class SwapService:
             old_reservation = old_reservations[swap.id]
             current_setup = self._setup_repository.get_by_id(swap.current_setup_id)
             target_setup = self._setup_repository.get_by_id(swap.requested_setup_id)
-            remark = _format_swap_remark(old_reservation.user.email, current_setup.hostname, target_setup.hostname, now)
+            remark = _format_relocation_remark(old_reservation.user.email, current_setup.hostname, target_setup.hostname, now)
             carried_remarks = _append_remark(old_reservation.remarks, remark)
 
             old_reservation.status = ReservationStatus.SWAPPED
@@ -399,7 +425,7 @@ class SwapService:
             )
             created_reservations.append(self._reservation_repository.create(new_reservation))
 
-            swap.status = SwapStatus.COMPLETED
+            swap.status = SwapStatus.APPROVED
             swap.approved_by_id = acting_user.id
             self._swap_repository.update(swap)
 
