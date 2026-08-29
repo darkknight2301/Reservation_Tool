@@ -12,7 +12,7 @@ from app.core.exceptions import AppError
 from app.models.user import User
 from app.schemas.reservation import ReservationFilter
 from app.schemas.setup import SetupFilter
-from app.schemas.swap_request import SwapFilter, SwapMappingCreateRequest, SwapMappingEntry
+from app.schemas.swap_request import SwapDecisionRequest, SwapFilter, SwapMappingCreateRequest, SwapMappingEntry
 from app.services.reservation_service import ReservationService
 from app.services.setup_service import SetupService
 from app.services.swap_service import SwapService
@@ -33,13 +33,22 @@ def _load_page_context(
     all_setups, _ = setup_service.list(SetupFilter(), page=1, page_size=1000)
     pending_swaps, _ = swap_service.list(SwapFilter(status=SwapStatus.PENDING), page=1, page_size=500)
 
+    # Two distinct pending-approval flows share this screen: coordinated
+    # multi-node mappings (grouped by batch_id) and individual column-swap
+    # requests submitted from the Swap dialog (batch_id is None for those).
     batches = {}
+    single_swaps = []
     for swap in pending_swaps:
         if swap.batch_id:
             batches.setdefault(swap.batch_id, []).append(swap)
+        else:
+            single_swaps.append(swap)
 
     context = base_context(request, current_user)
-    context.update({"active_reservations": active_reservations, "all_setups": all_setups, "batches": batches})
+    context.update({
+        "active_reservations": active_reservations, "all_setups": all_setups,
+        "batches": batches, "single_swaps": single_swaps,
+    })
     return context
 
 
@@ -113,6 +122,51 @@ def approve_swap_mapping_web(
     message, message_type = "Swap mapping approved successfully.", "success"
     try:
         swap_service.approve_mapping(batch_id, current_user)
+    except AppError as exc:
+        message, message_type = exc.message, "error"
+
+    context = _load_page_context(request, current_user, reservation_service, setup_service, swap_service)
+    response = templates.TemplateResponse("admin/_swap_mapping_batches.html", context)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
+    return response
+
+
+@router.post("/admin/swap-mapping/single/{swap_id}/approve")
+def approve_single_swap_web(
+    request: Request,
+    swap_id: int,
+    current_user: User = Depends(require_web_permission(PermissionCode.SWAP_APPROVE)),
+    reservation_service: ReservationService = Depends(get_reservation_service),
+    setup_service: SetupService = Depends(get_setup_service),
+    swap_service: SwapService = Depends(get_swap_service),
+):
+    """Approve an individual (non-mapping) column-swap request submitted from the Swap dialog."""
+    message, message_type = "Swap request approved -- values exchanged.", "success"
+    try:
+        swap_service.approve(swap_id, SwapDecisionRequest(), current_user)
+    except AppError as exc:
+        message, message_type = exc.message, "error"
+
+    context = _load_page_context(request, current_user, reservation_service, setup_service, swap_service)
+    response = templates.TemplateResponse("admin/_swap_mapping_batches.html", context)
+    response.headers["HX-Trigger"] = hx_trigger(message, message_type)
+    return response
+
+
+@router.post("/admin/swap-mapping/single/{swap_id}/reject")
+def reject_single_swap_web(
+    request: Request,
+    swap_id: int,
+    reason: str = Form(default=""),
+    current_user: User = Depends(require_web_permission(PermissionCode.SWAP_APPROVE)),
+    reservation_service: ReservationService = Depends(get_reservation_service),
+    setup_service: SetupService = Depends(get_setup_service),
+    swap_service: SwapService = Depends(get_swap_service),
+):
+    """Reject an individual (non-mapping) column-swap request."""
+    message, message_type = "Swap request rejected.", "success"
+    try:
+        swap_service.reject(swap_id, SwapDecisionRequest(reason=reason or None), current_user)
     except AppError as exc:
         message, message_type = exc.message, "error"
 
