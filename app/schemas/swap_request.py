@@ -8,12 +8,47 @@ from app.core.constants import SwapStatus
 
 
 class SwapCreateRequest(BaseModel):
-    """Payload for requesting a swap: exchange one field's value between two of the requester's own reserved setups."""
+    """
+    Payload for requesting a swap: exchange one or more fields' values
+    between two of the requester's own reserved setups.
+
+    ``column_names`` accepts one or more column names to swap together in a
+    single request. The legacy singular ``column_name`` is still accepted
+    for backward compatibility (equivalent to ``column_names=[column_name]``)
+    -- if both are omitted, every column common to the two setups is
+    swapped (a full setup swap).
+    """
 
     reservation_id: int
     requested_setup_id: int
-    column_name: str = Field(..., min_length=1, max_length=100)
+    column_name: Optional[str] = Field(default=None, max_length=100)
+    column_names: Optional[List[str]] = Field(default=None)
     reason: Optional[str] = Field(default=None, max_length=500)
+
+    @validator("column_names")
+    def _validate_column_names(cls, value: Optional[List[str]]) -> Optional[List[str]]:  # noqa: N805
+        if value is None:
+            return value
+        cleaned = []
+        for raw in value:
+            name = (raw or "").strip()
+            if not name:
+                continue
+            if len(name) > 100:
+                raise ValueError("Each column name must be at most 100 characters.")
+            if name not in cleaned:
+                cleaned.append(name)
+        if not cleaned:
+            raise ValueError("column_names, if provided, must contain at least one non-empty column name.")
+        return cleaned
+
+    def resolved_column_names(self) -> Optional[List[str]]:
+        """The effective list of requested column names, or None to mean 'every common column'."""
+        if self.column_names:
+            return self.column_names
+        if self.column_name and self.column_name.strip():
+            return [self.column_name.strip()]
+        return None
 
 
 class SwapDecisionRequest(BaseModel):
@@ -57,6 +92,7 @@ class SwapResponse(BaseModel):
     current_setup_id: int
     requested_setup_id: int
     column_name: Optional[str] = None
+    column_names: List[str] = Field(default_factory=list)
     previous_current_value: Optional[str] = None
     previous_requested_value: Optional[str] = None
     status: str

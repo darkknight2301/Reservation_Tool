@@ -241,20 +241,18 @@ def reserve_submit(
 def swap_dialog(
     request: Request,
     reservation_id: int,
-    current_user: User = Depends(get_current_web_user),
+    current_user: User = Depends(require_web_permission(PermissionCode.SWAP_REQUEST)),
     reservation_service: ReservationService = Depends(get_reservation_service),
     setup_service: SetupService = Depends(get_setup_service),
 ):
-    """Render the Swap dialog: pick another of your own reserved setups, and the column to exchange."""
+    """Render the Swap dialog: pick an available setup to swap into, and the column(s) to exchange."""
     reservation = reservation_service.get_by_id(reservation_id)
     current_setup = setup_service.get_by_id(reservation.setup_id)
 
-    my_reservations, _ = reservation_service.list(
-        ReservationFilter(user_id=current_user.id, status=ReservationStatus.ACTIVE), page=1, page_size=200
+    candidate_setups, _ = setup_service.list(
+        SetupFilter(product_id=current_setup.product_id, status=SetupStatus.AVAILABLE), page=1, page_size=200
     )
-    candidate_setups = [
-        setup_service.get_by_id(r.setup_id) for r in my_reservations if r.setup_id != current_setup.id
-    ]
+    candidate_setups = [s for s in candidate_setups if s.id != current_setup.id]
 
     context = base_context(request, current_user)
     context.update({
@@ -269,23 +267,25 @@ def swap_submit(
     request: Request,
     reservation_id: int = Form(...),
     requested_setup_id: int = Form(...),
-    column_name: str = Form(...),
+    column_names: List[str] = Form(default=[]),
     reason: str = Form(default=""),
-    current_user: User = Depends(get_current_web_user),
+    current_user: User = Depends(require_web_permission(PermissionCode.SWAP_REQUEST)),
     swap_service: SwapService = Depends(get_swap_service),
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
 ):
-    """Submit a swap request for approval."""
+    """Submit a swap request (one or more columns, or none to swap every common column) for approval."""
     message, message_type = "Swap request submitted for approval.", "success"
     try:
         payload = SwapCreateRequest(
             reservation_id=reservation_id, requested_setup_id=requested_setup_id,
-            column_name=column_name, reason=reason or None,
+            column_names=column_names or None, reason=reason or None,
         )
         swap_service.create(payload, current_user)
     except AppError as exc:
         message, message_type = exc.message, "error"
+    except ValidationError as exc:
+        message, message_type = "; ".join(err["msg"] for err in exc.errors()), "error"
 
     filters = SetupFilter()
     context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)

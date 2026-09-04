@@ -22,10 +22,12 @@ class SwapRequest(Base):
     current_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=False)
     requested_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=False)
 
-    # The field being exchanged between current_setup and requested_setup:
-    # either a fixed Setup column name (e.g. "ssd") or a custom template
-    # column name, common to both setups' products when they differ.
-    column_name = Column(String(100), nullable=True)
+    # The field(s) being exchanged between current_setup and requested_setup:
+    # a comma-separated list of one or more fixed Setup column names (e.g.
+    # "ssd,hdd") and/or custom template column names, each common to both
+    # setups' products when they differ. Widened from 100 -> 500 chars (see
+    # alembic 0009) to comfortably hold several column names at once.
+    column_name = Column(String(500), nullable=True)
 
     # Captured at approval time, before the exchange -- lets anyone with
     # ``swap:view`` (every role) see what each setup's value was before the
@@ -50,3 +52,10 @@ class SwapRequest(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only
         return "<SwapRequest id={0} status={1}>".format(self.id, self.status)
+
+    @property
+    def column_names(self):  # type: () -> list
+        """The swapped column name(s) as a list, parsed from the stored comma-separated string."""
+        if not self.column_name:
+            return []
+        return [part.strip() for part in self.column_name.split(",") if part.strip()]

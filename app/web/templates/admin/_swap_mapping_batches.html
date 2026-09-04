@@ -7,7 +7,7 @@
             <div class="small">
                 <div>
                     <i class="bi bi-arrow-left-right me-1 text-warning"></i>
-                    Swap <strong>'{{ swap.column_name }}'</strong> between
+                    Swap {% for col in swap.column_names %}<strong>'{{ col }}'</strong>{% if not loop.last %}, {% endif %}{% endfor %} between
                     <strong>{{ swap.current_setup.hostname }}</strong> and <strong>{{ swap.requested_setup.hostname }}</strong>
                 </div>
                 <div class="text-muted">

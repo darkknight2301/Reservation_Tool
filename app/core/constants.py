@@ -199,14 +199,25 @@ class ReservationStatus:
 
 
 class SwapStatus:
-    """Lifecycle status of a swap request."""
+    """
+    Lifecycle status of a swap request.
+
+    PENDING -> COMPLETED (approved and the value/relocation exchange has been
+    executed) or REJECTED or CANCELLED. ``APPROVED`` is kept as a legal value
+    (it is part of the original ``ck_swap_requests_status`` DB check
+    constraint -- see alembic 0001) but the service layer always moves a
+    swap straight from PENDING to COMPLETED, since approval and execution
+    happen atomically in one step; there is no separate "approved but not
+    yet executed" state in this design.
+    """
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
+    COMPLETED = "COMPLETED"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
 
-    ALL = (PENDING, APPROVED, REJECTED, CANCELLED)
+    ALL = (PENDING, APPROVED, COMPLETED, REJECTED, CANCELLED)
 
 
 class AnnouncementPriority:
