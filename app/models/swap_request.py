@@ -1,5 +1,5 @@
 """SwapRequest ORM model."""
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.core.constants import SwapStatus
@@ -8,19 +8,49 @@ from app.db.base import Base
 
 class SwapRequest(Base):
     """
-    A request to exchange one field's recorded value (e.g. an SSD) between
-    two of the requester's own currently-reserved setups. Neither setup's
-    reservation is affected -- only that one field's value moves between
-    the two Setup rows once the request is approved.
+    A request to change one or more hardware field values.
+
+    Historical rows (created before the Phase 1 data-model revision) used
+    this table to relocate the requester's Reservation to a different setup
+    -- see ARCHITECTURE_ASSESSMENT.md section 3.2. That behavior is being
+    retired in Phase 3: going forward a Swap changes CURRENT/EFFECTIVE
+    hardware fields on a *single* Setup (``setup_id`` below) and never
+    creates or relocates a Reservation. The legacy ``current_setup_id`` /
+    ``requested_setup_id`` / ``reservation_id`` columns are kept, unmodified,
+    so existing completed-swap history stays exactly as it was recorded;
+    new rows populate ``setup_id`` (and leave the relocation-shaped columns
+    NULL) instead.
     """
 
     __tablename__ = "swap_requests"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    reservation_id = Column(Integer, ForeignKey("reservations.id"), nullable=False)
+    # Legacy relocation-flow columns. Nullable (widened from NOT NULL by the
+    # Phase 1 migration) because new-style, non-relocating Swap requests
+    # populate ``setup_id`` instead and leave these NULL; existing rows keep
+    # their original, non-NULL values untouched.
+    reservation_id = Column(Integer, ForeignKey("reservations.id"), nullable=True)
     requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    current_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=False)
-    requested_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=False)
+    current_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=True)
+    requested_setup_id = Column(Integer, ForeignKey("setups.id"), nullable=True)
+
+    # New-style single-setup hardware change target. Exactly one of
+    # (setup_id) or (current_setup_id + requested_setup_id) is populated on
+    # any given row, depending on whether it predates this revision.
+    setup_id = Column(Integer, ForeignKey("setups.id"), nullable=True, index=True)
+
+    # Business rule: "Reserve/Swap/Borrow should support reason, start time,
+    # end time, announcement and applicable lead emails." ``reason`` already
+    # existed below; these three are additive.
+    start_time = Column(DateTime, nullable=True)
+    end_time = Column(DateTime, nullable=True)
+    announcement_channels = Column(String(200), nullable=True)  # comma-separated AnnouncementChannel values
+
+    # Snapshot of who this request was routed to at creation time
+    # (comma-separated emails), resolved via the data-driven approval
+    # hierarchy -- see BorrowRequest.routed_approver_emails for the same
+    # pattern and rationale.
+    routed_approver_emails = Column(Text, nullable=True)
 
     # The field(s) being exchanged between current_setup and requested_setup:
     # a comma-separated list of one or more fixed Setup column names (e.g.
@@ -48,6 +78,7 @@ class SwapRequest(Base):
     requester = relationship("User", foreign_keys=[requester_id])
     current_setup = relationship("Setup", foreign_keys=[current_setup_id])
     requested_setup = relationship("Setup", foreign_keys=[requested_setup_id])
+    setup = relationship("Setup", foreign_keys=[setup_id])
     approved_by = relationship("User", foreign_keys=[approved_by_id])
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only

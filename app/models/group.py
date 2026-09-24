@@ -27,5 +27,17 @@ class Group(Base):
     members = relationship("User", secondary="user_groups", back_populates="groups")
     setups = relationship("Setup", back_populates="group")
 
+    # Data-driven approval-hierarchy edges (see app.models.group_hierarchy_edge).
+    # "parent_edges": edges where this Group is the PARENT (i.e. the groups
+    # this Group manages/leads-over). "child_edges": edges where this Group
+    # is the CHILD (i.e. the groups that manage/lead this Group -- a Group
+    # can have more than one, since the hierarchy is a DAG, not a tree).
+    parent_edges = relationship(
+        "GroupHierarchyEdge", foreign_keys="GroupHierarchyEdge.parent_group_id", back_populates="parent_group"
+    )
+    child_edges = relationship(
+        "GroupHierarchyEdge", foreign_keys="GroupHierarchyEdge.child_group_id", back_populates="child_group"
+    )
+
     def __repr__(self) -> str:  # pragma: no cover - debug helper only
         return "<Group id={0} name={1}>".format(self.id, self.name)

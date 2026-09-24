@@ -8,9 +8,12 @@ references between models.
 """
 from app.models.announcement import Announcement  # noqa: F401
 from app.models.audit_log import AuditLog  # noqa: F401
+from app.models.borrow_request import BorrowRequest  # noqa: F401
 from app.models.excel_transaction_log import ExcelTransactionLog  # noqa: F401
 from app.models.export_log import ExportLog  # noqa: F401
 from app.models.group import Group  # noqa: F401
+from app.models.group_hierarchy_edge import GroupHierarchyEdge  # noqa: F401
+from app.models.hardware_change_log import HardwareChangeLog  # noqa: F401
 from app.models.password_reset_token import PasswordResetToken  # noqa: F401
 from app.models.permission import Permission, role_permissions  # noqa: F401
 from app.models.product import Product  # noqa: F401
@@ -19,7 +22,9 @@ from app.models.refresh_token import RefreshToken  # noqa: F401
 from app.models.reservation import Reservation  # noqa: F401
 from app.models.role import Role  # noqa: F401
 from app.models.setup import Setup  # noqa: F401
+from app.models.setup_access_grant import SetupAccessGrant  # noqa: F401
 from app.models.setup_custom_field_value import SetupCustomFieldValue  # noqa: F401
+from app.models.setup_hardware_baseline import SetupHardwareBaseline  # noqa: F401
 from app.models.swap_request import SwapRequest  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_group import user_groups  # noqa: F401
@@ -27,9 +32,12 @@ from app.models.user_group import user_groups  # noqa: F401
 __all__ = [
     "Announcement",
     "AuditLog",
+    "BorrowRequest",
     "ExcelTransactionLog",
     "ExportLog",
     "Group",
+    "GroupHierarchyEdge",
+    "HardwareChangeLog",
     "Permission",
     "role_permissions",
     "PasswordResetToken",
@@ -39,7 +47,9 @@ __all__ = [
     "Reservation",
     "Role",
     "Setup",
+    "SetupAccessGrant",
     "SetupCustomFieldValue",
+    "SetupHardwareBaseline",
     "SwapRequest",
     "User",
     "user_groups",

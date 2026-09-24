@@ -58,6 +58,15 @@ class PermissionCode:
     ANNOUNCEMENT_MANAGE = "announcement:manage"
     ANNOUNCEMENT_VIEW = "announcement:view"
 
+    # Borrow is restricted to Group Leads and their Managers (business rule:
+    # "Borrow privilege is only for Group Leads and their Managers, where
+    # supported by the existing role model") -- granted only to
+    # LEAD/DEVELOPER_LEAD/OWNER below, never to USER/DEVELOPER.
+    BORROW_REQUEST = "borrow:request"
+    BORROW_APPROVE = "borrow:approve"
+    BORROW_RETURN = "borrow:return"
+    BORROW_VIEW = "borrow:view"
+
     AUDIT_VIEW = "audit:view"
 
     LOGS_VIEW = "logs:view"
@@ -82,6 +91,10 @@ class PermissionCode:
         SWAP_VIEW,
         ANNOUNCEMENT_MANAGE,
         ANNOUNCEMENT_VIEW,
+        BORROW_REQUEST,
+        BORROW_APPROVE,
+        BORROW_RETURN,
+        BORROW_VIEW,
         AUDIT_VIEW,
         LOGS_VIEW,
         EXPORT_RUN,
@@ -134,6 +147,10 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PermissionCode.SWAP_REQUEST,
         PermissionCode.SWAP_APPROVE,
         PermissionCode.SWAP_VIEW,
+        PermissionCode.BORROW_REQUEST,
+        PermissionCode.BORROW_APPROVE,
+        PermissionCode.BORROW_RETURN,
+        PermissionCode.BORROW_VIEW,
         PermissionCode.ANNOUNCEMENT_VIEW,
         PermissionCode.EXPORT_RUN,
         PermissionCode.IMPORT_RUN,
@@ -154,6 +171,10 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PermissionCode.SWAP_REQUEST,
         PermissionCode.SWAP_APPROVE,
         PermissionCode.SWAP_VIEW,
+        PermissionCode.BORROW_REQUEST,
+        PermissionCode.BORROW_APPROVE,
+        PermissionCode.BORROW_RETURN,
+        PermissionCode.BORROW_VIEW,
         PermissionCode.ANNOUNCEMENT_MANAGE,
         PermissionCode.ANNOUNCEMENT_VIEW,
         PermissionCode.AUDIT_VIEW,
@@ -218,6 +239,41 @@ class SwapStatus:
     CANCELLED = "CANCELLED"
 
     ALL = (PENDING, APPROVED, COMPLETED, REJECTED, CANCELLED)
+
+
+class BorrowStatus:
+    """
+    Lifecycle status of a Borrow request.
+
+    PENDING -> COMPLETED (approved; access transferred) or REJECTED or
+    CANCELLED (withdrawn before a decision). A COMPLETED borrow later
+    transitions out-of-band to RETURNED via ``BorrowService.return_resource``
+    (Phase 4) once the borrowed access/hardware is handed back to the
+    source group -- RETURNED is a terminal state distinct from COMPLETED so
+    "currently borrowed" can be filtered with a single status check.
+    """
+
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+    RETURNED = "RETURNED"
+
+    ALL = (PENDING, COMPLETED, REJECTED, CANCELLED, RETURNED)
+
+
+class HardwareChangeSource:
+    """
+    Which domain transaction produced a row in the hardware change ledger
+    (``hardware_change_logs``). Kept as a plain string constant (not a FK to
+    two different tables) so the ledger stays a single, simply-queryable
+    append-only history regardless of which domain caused the change.
+    """
+
+    SWAP = "SWAP"
+    BORROW = "BORROW"
+
+    ALL = (SWAP, BORROW)
 
 
 class AnnouncementPriority:
