@@ -1,5 +1,12 @@
-"""Swap request endpoints: request, approve, reject, cancel, and multi-node mapping swaps."""
-from typing import List, Optional
+"""Swap request endpoints: request, approve, reject, cancel.
+
+The multi-node "swap mapping" endpoints (POST /swaps/mapping,
+PATCH /swaps/mapping/{batch_id}/approve) were removed in Phase 3 per
+business rule 6 ("remove/avoid swap-mapping functionality"). Historical
+mapping-era rows are still readable via GET /swaps and GET /swaps/{id}
+(``SwapResponse.batch_id``).
+"""
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 
@@ -7,13 +14,7 @@ from app.api.deps import get_current_user, get_swap_service, require_permission
 from app.core.constants import PermissionCode
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
-from app.schemas.swap_request import (
-    SwapCreateRequest,
-    SwapDecisionRequest,
-    SwapFilter,
-    SwapMappingCreateRequest,
-    SwapResponse,
-)
+from app.schemas.swap_request import SwapCreateRequest, SwapDecisionRequest, SwapFilter, SwapResponse
 from app.services.swap_service import SwapService
 from app.utils.pagination import total_pages
 
@@ -43,7 +44,7 @@ def create_swap(
     current_user: User = Depends(require_permission(PermissionCode.SWAP_REQUEST)),
     swap_service: SwapService = Depends(get_swap_service),
 ):
-    """Request a swap of the current user's active reservation. Requires ``swap:request``."""
+    """Request a hardware-field-value swap between two setups the requester currently uses. Requires ``swap:request``."""
     return swap_service.create(payload, current_user)
 
 
@@ -64,7 +65,11 @@ def approve_swap(
     current_user: User = Depends(require_permission(PermissionCode.SWAP_APPROVE)),
     swap_service: SwapService = Depends(get_swap_service),
 ):
-    """Approve a pending swap request. Requires ``swap:approve``."""
+    """
+    Approve a pending swap request. Requires ``swap:approve``; if the
+    setup's group (or an ancestor group) has a routed Lead/Manager, only
+    one of them (or an Owner) may act -- see ``ApprovalRoutingService``.
+    """
     return swap_service.approve(swap_id, payload, current_user)
 
 
@@ -75,7 +80,7 @@ def reject_swap(
     current_user: User = Depends(require_permission(PermissionCode.SWAP_APPROVE)),
     swap_service: SwapService = Depends(get_swap_service),
 ):
-    """Reject a pending swap request. Requires ``swap:approve``."""
+    """Reject a pending swap request. Requires ``swap:approve``, subject to the same hierarchy routing as approval."""
     return swap_service.reject(swap_id, payload, current_user)
 
 
@@ -87,29 +92,3 @@ def cancel_swap(
 ):
     """Cancel the current user's own pending swap request."""
     return swap_service.cancel(swap_id, current_user)
-
-
-@router.post("/mapping", response_model=List[SwapResponse], status_code=201)
-def create_swap_mapping(
-    payload: SwapMappingCreateRequest,
-    current_user: User = Depends(require_permission(PermissionCode.SWAP_APPROVE)),
-    swap_service: SwapService = Depends(get_swap_service),
-):
-    """
-    Create a coordinated multi-node swap mapping (e.g. A->B, B->A, C->D) as
-    a batch of PENDING swap requests. Requires ``swap:approve`` since the
-    mapping affects reservations belonging to more than one user.
-    """
-    created = swap_service.create_mapping(payload, current_user)
-    return [SwapResponse.from_orm(swap) for swap in created]
-
-
-@router.patch("/mapping/{batch_id}/approve", response_model=List[SwapResponse])
-def approve_swap_mapping(
-    batch_id: str,
-    current_user: User = Depends(require_permission(PermissionCode.SWAP_APPROVE)),
-    swap_service: SwapService = Depends(get_swap_service),
-):
-    """Approve every swap request in a mapping batch atomically. Requires ``swap:approve``."""
-    approved = swap_service.approve_mapping(batch_id, current_user)
-    return [SwapResponse.from_orm(swap) for swap in approved]

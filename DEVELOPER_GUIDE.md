@@ -41,14 +41,12 @@ Infrastructure → app/db (engine/session), app/core (config/logging/security)
 
 For the full entity-relationship diagram and the original design rationale (including why Reservation/Setup/Group/Product are separate aggregates), see the project's architecture document if retained in your repo history; the schema itself is authoritative in `alembic/versions/0001_initial_schema.py` + `0002_reservation_remarks_swap_batch.py`.
 
-**Reservation / Swap / Borrow redesign (in progress, tracked in `ARCHITECTURE_ASSESSMENT.md` and `IMPLEMENTATION_PROGRESS.md`):** Reservation, Swap, and Borrow are being made independent transaction domains over the same `Setup`/`Group` resources. Phase 1 (data model, `alembic/versions/0010_borrow_hierarchy_hardware_history.py`) added, purely additively:
-- `setup_hardware_baseline` — the immutable ORIGINAL hardware snapshot per Setup (backfilled from existing data); `setups.<field>` continues to hold CURRENT/EFFECTIVE, unchanged.
-- `hardware_change_logs` — an append-only, per-field change ledger (replaces relying on free-text remarks or a single "previous value" slot for history), feeding the Setup Table's "only changed cells highlighted" UI requirement.
-- `group_hierarchy_edges` — a directed-edge (DAG, not a single-parent tree — a Group can have more than one parent) table making the Swap/Borrow approval hierarchy configurable/data-driven instead of hardcoded; walked at request time by a future `ApprovalRoutingService`.
-- `borrow_requests` + `setup_access_grants` — the new Borrow aggregate and its derived "temporary effective access" concept; `setups.group_id` (the ORIGINAL owning group) is never overwritten by a Borrow.
-- `swap_requests` gained nullable `setup_id`/`start_time`/`end_time`/`announcement_channels`/`routed_approver_emails` columns for the redesigned (non-relocating) Swap semantics; the legacy relocation columns (`reservation_id`, `current_setup_id`, `requested_setup_id`) were widened to nullable but are otherwise untouched, so existing completed-swap history reads back exactly as before.
+**Reservation / Swap / Borrow redesign (in progress, tracked in `ARCHITECTURE_ASSESSMENT.md` and `IMPLEMENTATION_PROGRESS.md`):** Reservation, Swap, and Borrow are independent transaction domains over the same `Setup`/`Group` resources.
 
-Service-layer behavior changes (Swap no longer relocating a Reservation; Borrow's request/approve/return flow; UI highlighting) are scheduled for later phases and are not yet implemented as of this note.
+- **Phase 1** (data model, `alembic/versions/0010_borrow_hierarchy_hardware_history.py`) added, purely additively: `setup_hardware_baseline` (immutable ORIGINAL hardware snapshot per Setup), `hardware_change_logs` (append-only per-field change ledger), `group_hierarchy_edges` (directed-edge DAG for a configurable/data-driven approval hierarchy — a Group can have more than one parent), `borrow_requests` + `setup_access_grants` (the Borrow aggregate; `setups.group_id`, the ORIGINAL owning group, is never overwritten by a Borrow), and new nullable columns on `swap_requests` for the Phase 3 redesign.
+- **Phase 2** (Reservation) removed the one real coupling that existed: `ReservationService.cancel()` no longer blocks on a pending Swap (`ReservationService` has zero references to Swap/Borrow anywhere). The matching UI-level block in the Unreserve dialog was relaxed to an informational-only notice.
+- **Phase 3** (Swap) is complete: `SwapService` exchanges one or more hardware field values *between two setups* (business rule 5) and never touches, creates, or relocates a Reservation, and never re-checks Reservation state at any point — full independence. Every approved exchange is recorded in `hardware_change_logs` (in addition to the existing `previous_*_value` snapshot on the request itself). Approval is routed through `ApprovalRoutingService`, which walks `group_hierarchy_edges` to find the full ancestor-closure of Leads/Managers for the setup's owning Group (ANY ONE of them may approve, or an Owner always may); if none can be resolved (no hierarchy configured yet and the group has no Lead of its own), approval falls back to the flat `swap:approve` permission exactly as before, so an approval can never become unreachable. The multi-node "swap mapping" feature (`/admin/swap-mapping`, `POST /swaps/mapping`) has been removed entirely per business rule 6; single-swap web approval now lives at `/admin/swap-approvals` instead. New `borrow:*` permission codes exist (granted only to LEAD/DEVELOPER_LEAD/OWNER) but Borrow itself (the service, API, and UI) is not implemented yet.
+- **Phase 4** (Borrow service/API) and **Phase 5** (Frontend: Swap/Borrow dialogs, Setup Table cell highlighting) remain to be done.
 
 ---
 
@@ -158,7 +156,7 @@ Base path: `/api/v1`. All endpoints except `/auth/register` and `/auth/login`/`/
 | Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/{id}` |
 | Setups | `GET/POST /setups`, `GET/PATCH/DELETE /setups/{id}` |
 | Reservations | `GET/POST /reservations`, `GET /reservations/{id}`, `PATCH /reservations/{id}/cancel` |
-| Swaps | `GET/POST /swaps`, `GET /swaps/{id}`, `PATCH /swaps/{id}/approve\|reject\|cancel`, `POST /swaps/mapping`, `PATCH /swaps/mapping/{batch_id}/approve` |
+| Swaps | `GET/POST /swaps`, `GET /swaps/{id}`, `PATCH /swaps/{id}/approve\|reject\|cancel` |
 | Announcements | `GET/POST /announcements`, `GET/PATCH/DELETE /announcements/{id}` |
 | Audit Logs | `GET /audit-logs` (read-only) |
 | Exports | `POST /exports/setups`, `POST /exports/setups/template`, `POST /exports/reservations` |
@@ -225,7 +223,7 @@ pip install pytest pytest-cov httpx
 pytest --cov=app tests/
 ```
 
-**Priority test targets** given the business-rule density in this codebase: `ReservationService._assert_no_overlap`, `SwapService.create_mapping`/`approve_mapping` (node-uniqueness/availability validation), `ReservationService.cancel` (pending-swap block), `UserService.process_approval` (Group-scoped Lead approval), `ImportService` (all-or-nothing commit + row-level error reporting).
+**Priority test targets** given the business-rule density in this codebase: `ReservationService._assert_no_overlap`, `SwapService.create_mapping`/`approve_mapping` (node-uniqueness/availability validation), `UserService.process_approval` (Group-scoped Lead approval), `ImportService` (all-or-nothing commit + row-level error reporting).
 
 ---
 

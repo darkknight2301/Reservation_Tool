@@ -245,14 +245,14 @@ def swap_dialog(
     reservation_service: ReservationService = Depends(get_reservation_service),
     setup_service: SetupService = Depends(get_setup_service),
 ):
-    """Render the Swap dialog: pick an available setup to swap into, and the column(s) to exchange."""
+    """Render the Swap dialog: pick a setup to exchange column(s) with. Neither setup's reservation is affected."""
     reservation = reservation_service.get_by_id(reservation_id)
     current_setup = setup_service.get_by_id(reservation.setup_id)
 
-    candidate_setups, _ = setup_service.list(
-        SetupFilter(product_id=current_setup.product_id, status=SetupStatus.AVAILABLE), page=1, page_size=200
-    )
-    candidate_setups = [s for s in candidate_setups if s.id != current_setup.id]
+    candidate_setups, _ = setup_service.list(SetupFilter(product_id=current_setup.product_id), page=1, page_size=200)
+    candidate_setups = [
+        s for s in candidate_setups if s.id != current_setup.id and s.status not in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED)
+    ]
 
     context = base_context(request, current_user)
     context.update({
@@ -265,7 +265,7 @@ def swap_dialog(
 @router.post("/setups/swap")
 def swap_submit(
     request: Request,
-    reservation_id: int = Form(...),
+    current_setup_id: int = Form(...),
     requested_setup_id: int = Form(...),
     column_names: List[str] = Form(default=[]),
     reason: str = Form(default=""),
@@ -278,7 +278,7 @@ def swap_submit(
     message, message_type = "Swap request submitted for approval.", "success"
     try:
         payload = SwapCreateRequest(
-            reservation_id=reservation_id, requested_setup_id=requested_setup_id,
+            current_setup_id=current_setup_id, requested_setup_id=requested_setup_id,
             column_names=column_names or None, reason=reason or None,
         )
         swap_service.create(payload, current_user)
@@ -302,7 +302,7 @@ def unreserve_dialog(
     reservation_service: ReservationService = Depends(get_reservation_service),
     swap_service: SwapService = Depends(get_swap_service),
 ):
-    """Render the Unreserve confirmation dialog, warning if a swap is still pending on any selection."""
+    """Render the Unreserve confirmation dialog; informationally flags (but never blocks on) a still-pending swap."""
     ids = [int(value) for value in reservation_ids.split(",") if value]
     reservations = [reservation_service.get_by_id(reservation_id) for reservation_id in ids]
     blocked_reservation_ids = {

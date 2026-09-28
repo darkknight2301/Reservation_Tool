@@ -4,10 +4,17 @@ Reservation service.
 The core aggregate of the system. Enforces the interval-overlap validation
 rule (in the service layer, not the DB schema, since exclusion constraints
 are not portable between SQLite and PostgreSQL -- see the architecture
-document, section 11), keeps ``setup.status`` in sync with reservation
-lifecycle transitions inside a single transaction, optionally broadcasts the
-reservation across the requested announcement channels, and blocks
-unreserving a reservation while a swap on it is still pending.
+document, section 11), and keeps ``setup.status`` in sync with reservation
+lifecycle transitions inside a single transaction, optionally broadcasting
+the reservation across the requested announcement channels.
+
+Deliberately has NO dependency on Swap or Borrow (no repository, no import,
+no runtime check against either) -- see ARCHITECTURE_ASSESSMENT.md section
+3.1 / IMPLEMENTATION_PROGRESS.md Phase 2. A reservation may be cancelled at
+any time regardless of any pending Swap or Borrow referencing its setup;
+Swap independently re-validates its own preconditions (including that the
+requester's reservation is still ACTIVE) at approval time, so this is safe
+without Reservation needing to know Swap/Borrow exist.
 """
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -18,7 +25,6 @@ from app.models.reservation import Reservation
 from app.models.user import User
 from app.repositories.interfaces.i_reservation_repository import IReservationRepository
 from app.repositories.interfaces.i_setup_repository import ISetupRepository
-from app.repositories.interfaces.i_swap_repository import ISwapRepository
 from app.schemas.reservation import ReservationCreateRequest, ReservationFilter
 from app.services.audit_service import AuditService
 from app.services.notification_service import NotificationService
@@ -34,14 +40,12 @@ class ReservationService:
         setup_repository: ISetupRepository,
         role_lookup_service: RoleLookupService,
         audit_service: AuditService,
-        swap_repository: Optional[ISwapRepository] = None,
         notification_service: Optional[NotificationService] = None,
     ) -> None:
         self._reservation_repository = reservation_repository
         self._setup_repository = setup_repository
         self._role_lookup_service = role_lookup_service
         self._audit_service = audit_service
-        self._swap_repository = swap_repository
         self._notification_service = notification_service
 
     def get_by_id(self, reservation_id: int) -> Reservation:
@@ -133,23 +137,17 @@ class ReservationService:
             AuthorizationError: if the acting user does not own the
                 reservation and lacks the ``reservation:cancel_any``
                 permission.
-            ConflictError: if the reservation is not ACTIVE, or if a swap
-                request on this reservation is still PENDING (the swap must
-                be approved, rejected, or cancelled -- "restored" -- first,
-                so a mid-flight swap is never left dangling).
+            ConflictError: if the reservation is not ACTIVE.
+
+        Note: this no longer checks for a pending Swap/Borrow on the
+        reservation (see the module docstring) -- Reserve, Swap, and Borrow
+        are independent workflows per business rule 1, and Swap already
+        re-validates that the requester's reservation is still ACTIVE for
+        itself at approval time, so cancelling here is always safe.
         """
         reservation = self.get_by_id(reservation_id)
         if reservation.status != ReservationStatus.ACTIVE:
             raise ConflictError("Only ACTIVE reservations can be cancelled.")
-
-        if self._swap_repository is not None:
-            pending_swap = self._swap_repository.get_pending_by_reservation_id(reservation_id)
-            if pending_swap is not None:
-                raise ConflictError(
-                    "Cannot unreserve: a swap request on this reservation is still PENDING. "
-                    "Approve, reject, or cancel the swap first to restore it.",
-                    details={"pending_swap_request_id": pending_swap.id},
-                )
 
         is_owner = reservation.user_id == acting_user.id
         can_cancel_any = self._role_lookup_service.role_has_permission(

@@ -15,6 +15,8 @@ from app.repositories.sqlalchemy.announcement_repository import AnnouncementRepo
 from app.repositories.sqlalchemy.audit_repository import AuditLogRepository
 from app.repositories.sqlalchemy.export_repository import ExportRepository
 from app.repositories.sqlalchemy.group_repository import GroupRepository
+from app.repositories.sqlalchemy.group_hierarchy_repository import GroupHierarchyRepository
+from app.repositories.sqlalchemy.hardware_change_log_repository import HardwareChangeLogRepository
 from app.repositories.sqlalchemy.product_repository import ProductRepository
 from app.repositories.sqlalchemy.password_reset_repository import PasswordResetRepository
 from app.repositories.sqlalchemy.refresh_token_repository import RefreshTokenRepository
@@ -25,12 +27,14 @@ from app.repositories.sqlalchemy.swap_repository import SwapRepository
 from app.repositories.sqlalchemy.template_repository import TemplateRepository
 from app.repositories.sqlalchemy.user_repository import UserRepository
 from app.services.announcement_service import AnnouncementService
+from app.services.approval_routing_service import ApprovalRoutingService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.developer_logs_service import DeveloperLogsService
 from app.services.email_service import EmailService
 from app.services.export_service import ExportService
 from app.services.group_service import GroupService
+from app.services.group_hierarchy_service import GroupHierarchyService
 from app.services.import_service import ImportService
 from app.services.notification_service import NotificationService
 from app.services.product_service import ProductService
@@ -78,6 +82,14 @@ def get_reservation_repository(db: Session = Depends(get_db)) -> ReservationRepo
 
 def get_swap_repository(db: Session = Depends(get_db)) -> SwapRepository:
     return SwapRepository(db)
+
+
+def get_group_hierarchy_repository(db: Session = Depends(get_db)) -> GroupHierarchyRepository:
+    return GroupHierarchyRepository(db)
+
+
+def get_hardware_change_log_repository(db: Session = Depends(get_db)) -> HardwareChangeLogRepository:
+    return HardwareChangeLogRepository(db)
 
 
 def get_announcement_repository(db: Session = Depends(get_db)) -> AnnouncementRepository:
@@ -180,10 +192,24 @@ def get_reservation_service(
     setup_repository: SetupRepository = Depends(get_setup_repository),
     role_lookup_service: RoleLookupService = Depends(get_role_lookup_service),
     audit_service: AuditService = Depends(get_audit_service),
-    swap_repository: SwapRepository = Depends(get_swap_repository),
     notification_service: NotificationService = Depends(get_notification_service),
 ) -> ReservationService:
-    return ReservationService(reservation_repository, setup_repository, role_lookup_service, audit_service, swap_repository, notification_service)
+    return ReservationService(reservation_repository, setup_repository, role_lookup_service, audit_service, notification_service)
+
+
+def get_approval_routing_service(
+    group_hierarchy_repository: GroupHierarchyRepository = Depends(get_group_hierarchy_repository),
+    user_repository: UserRepository = Depends(get_user_repository),
+) -> ApprovalRoutingService:
+    return ApprovalRoutingService(group_hierarchy_repository, user_repository)
+
+
+def get_group_hierarchy_service(
+    group_hierarchy_repository: GroupHierarchyRepository = Depends(get_group_hierarchy_repository),
+    group_repository: GroupRepository = Depends(get_group_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> GroupHierarchyService:
+    return GroupHierarchyService(group_hierarchy_repository, group_repository, audit_service)
 
 
 def get_swap_service(
@@ -191,12 +217,14 @@ def get_swap_service(
     reservation_repository: ReservationRepository = Depends(get_reservation_repository),
     setup_repository: SetupRepository = Depends(get_setup_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    hardware_change_log_repository: HardwareChangeLogRepository = Depends(get_hardware_change_log_repository),
+    approval_routing_service: ApprovalRoutingService = Depends(get_approval_routing_service),
     template_service: TemplateService = Depends(get_template_service),
     notification_service: NotificationService = Depends(get_notification_service),
 ) -> SwapService:
     return SwapService(
         swap_repository, reservation_repository, setup_repository, audit_service,
-        template_service, notification_service,
+        hardware_change_log_repository, approval_routing_service, template_service, notification_service,
     )
 
 

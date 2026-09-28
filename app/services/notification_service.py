@@ -35,6 +35,11 @@ class NotificationService:
         self._email_service = email_service
         self._user_repository = user_repository
 
+    def email_direct(self, recipients: List[str], subject: str, message: str) -> None:
+        """Send an email straight to an explicit recipient list, bypassing channel selection -- used for Swap/Borrow's "applicable lead emails" (business rule 2), which must always be notified regardless of the requester's chosen announcement_channels."""
+        if recipients:
+            self._email_service.send_email(recipients, subject, message)
+
     def broadcast_reservation_event(
         self,
         channels: List[str],

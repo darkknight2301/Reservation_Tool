@@ -104,13 +104,16 @@ def test_workflow_register_login_reserve_verify_db_and_log(client, db_session, m
 
 
 # ---------------------------------------------------------------------
-# 2. Reserve -> Swap -> verify DB/history
+# 2. Reserve -> Swap -> verify hardware values exchanged, nothing relocated
 # ---------------------------------------------------------------------
 
 def test_workflow_reserve_swap_verify_history(client, db_session, auth_headers, developer_user, make_user, make_setup, product):
     dev_headers = auth_headers(developer_user)
     setup_a = make_setup(product_id=product.id)
     setup_b = make_setup(product_id=product.id)
+    setup_a.ssd, setup_b.ssd = "Original-A", "Original-B"
+    db_session.add_all([setup_a, setup_b])
+    db_session.commit()
     start, end = _window()
 
     reserve_resp = client.post(
@@ -123,7 +126,7 @@ def test_workflow_reserve_swap_verify_history(client, db_session, auth_headers, 
 
     swap_resp = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": original_reservation_id, "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id, "column_names": ["ssd"]},
         headers=dev_headers,
     )
     assert swap_resp.status_code == 201
@@ -136,35 +139,40 @@ def test_workflow_reserve_swap_verify_history(client, db_session, auth_headers, 
     assert approve_resp.status_code == 200
     assert approve_resp.json()["status"] == SwapStatus.COMPLETED
 
-    # Original reservation is now SWAPPED (terminal), setup A freed, setup B reserved.
+    # Reservation, Swap, and Borrow are independent workflows (business rule
+    # 1): the original reservation is completely untouched by the swap --
+    # still ACTIVE, still on setup_a, no second reservation created anywhere.
     db_session.expire_all()
     original = db_session.query(Reservation).filter(Reservation.id == original_reservation_id).first()
-    assert original.status == ReservationStatus.SWAPPED
-    assert original.remarks is not None
-    assert developer_user.email in original.remarks
-    assert setup_a.hostname in original.remarks
-    assert setup_b.hostname in original.remarks
+    assert original.status == ReservationStatus.ACTIVE
+    assert original.setup_id == setup_a.id
 
-    new_reservation = (
-        db_session.query(Reservation)
-        .filter(Reservation.setup_id == setup_b.id, Reservation.status == ReservationStatus.ACTIVE)
-        .first()
+    other_reservations = (
+        db_session.query(Reservation).filter(Reservation.setup_id == setup_b.id).all()
     )
-    assert new_reservation is not None
-    assert new_reservation.user_id == developer_user.id
-    assert new_reservation.remarks == original.remarks  # history carried forward
+    assert other_reservations == []
 
+    # The hardware value itself WAS exchanged between the two setups.
     db_setup_a = db_session.query(Setup).filter(Setup.id == setup_a.id).first()
     db_setup_b = db_session.query(Setup).filter(Setup.id == setup_b.id).first()
-    assert db_setup_a.status == SetupStatus.AVAILABLE
-    assert db_setup_b.status == SetupStatus.RESERVED
+    assert db_setup_a.ssd == "Original-B"
+    assert db_setup_b.ssd == "Original-A"
+    # Setup.status is a Reservation concern only -- a Swap never touches it.
+    assert db_setup_a.status == SetupStatus.RESERVED
+    assert db_setup_b.status == SetupStatus.AVAILABLE
+
+    from app.models.hardware_change_log import HardwareChangeLog
+
+    ledger_rows = db_session.query(HardwareChangeLog).filter(HardwareChangeLog.source_request_id == swap_id).all()
+    assert len(ledger_rows) == 2
 
 
 # ---------------------------------------------------------------------
-# 3. Active swap -> Unreserve -> verify rejection
+# 3. Pending swap never blocks unreserve; swap approval never depends on
+#    the requester's reservation still being active (Phase 2 + Phase 3)
 # ---------------------------------------------------------------------
 
-def test_workflow_active_swap_blocks_unreserve(client, auth_headers, developer_user, make_setup, product):
+def test_workflow_reservation_and_swap_are_fully_independent(client, auth_headers, developer_user, make_user, make_setup, product):
     dev_headers = auth_headers(developer_user)
     setup_a = make_setup(product_id=product.id)
     setup_b = make_setup(product_id=product.id)
@@ -179,24 +187,39 @@ def test_workflow_active_swap_blocks_unreserve(client, auth_headers, developer_u
 
     swap_resp = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": reservation_id, "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=dev_headers,
     )
     assert swap_resp.status_code == 201
+    swap_id = swap_resp.json()["id"]
 
+    # Unreserving does NOT wait on, or get blocked by, the pending swap.
     cancel_resp = client.patch("{0}/reservations/{1}/cancel".format(API, reservation_id), headers=dev_headers)
-    assert cancel_resp.status_code == 409
-    assert cancel_resp.json()["error"]["code"] == "CONFLICT"
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["status"] == ReservationStatus.CANCELLED
+
+    # The swap can still be approved afterward -- it never depended on that
+    # reservation remaining active.
+    approver = make_user(role_name=RoleName.LEAD)
+    approve_resp = client.patch(
+        "{0}/swaps/{1}/approve".format(API, swap_id), json={}, headers=auth_headers(approver)
+    )
+    assert approve_resp.status_code == 200
+    assert approve_resp.json()["status"] == SwapStatus.COMPLETED
 
 
 # ---------------------------------------------------------------------
-# 4. Restore swap -> Unreserve -> verify success
+# 4. Cancelling a swap leaves both setups' hardware and reservation state
+#    completely untouched
 # ---------------------------------------------------------------------
 
-def test_workflow_restored_swap_allows_unreserve(client, db_session, auth_headers, developer_user, make_setup, product):
+def test_workflow_cancelled_swap_leaves_everything_untouched(client, db_session, auth_headers, developer_user, make_setup, product):
     dev_headers = auth_headers(developer_user)
     setup_a = make_setup(product_id=product.id)
     setup_b = make_setup(product_id=product.id)
+    setup_a.ssd = "Untouched-A"
+    db_session.add(setup_a)
+    db_session.commit()
     start, end = _window()
 
     reserve_resp = client.post(
@@ -208,7 +231,7 @@ def test_workflow_restored_swap_allows_unreserve(client, db_session, auth_header
 
     swap_resp = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": reservation_id, "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id, "column_names": ["ssd"]},
         headers=dev_headers,
     )
     swap_id = swap_resp.json()["id"]
@@ -224,6 +247,7 @@ def test_workflow_restored_swap_allows_unreserve(client, db_session, auth_header
     db_session.expire_all()
     db_setup_a = db_session.query(Setup).filter(Setup.id == setup_a.id).first()
     assert db_setup_a.status == SetupStatus.AVAILABLE
+    assert db_setup_a.ssd == "Untouched-A"  # a cancelled swap never touches hardware values
 
 
 # ---------------------------------------------------------------------

@@ -86,6 +86,16 @@ close to the target model:
   Swap no longer relocates the reservation itself (see 3.2) — once a Swap is
   a pure hardware-field change, there is nothing for an unreserve to
   conflict with.
+
+  **RESOLVED in Phase 2** (see IMPLEMENTATION_PROGRESS.md): the block was
+  removed sooner than "once Swap is redesigned," because `SwapService.approve()`
+  turned out to already independently re-verify the requester's reservation
+  is still ACTIVE at approval time — so cancelling immediately, before
+  Phase 3's Swap redesign, is safe: an orphaned pending swap simply fails
+  cleanly at approval time (`ConflictError`) instead of relocating/corrupting
+  anything. The matching UI-level block (a disabled Unreserve button in
+  `unreserve_dialog.html`) was the same coupling at the presentation layer
+  and was relaxed to an informational-only warning in the same phase.
 - Reservation does not grant hardware ownership today (correct, matches the
   new rule) and does not auto-approve anything (correct).
 
@@ -134,6 +144,20 @@ Other current Swap characteristics:
   matches the new rule) — this piece of logic is reusable.
 - Approval/rejection is audited (good, reusable).
 
+**RESOLVED in Phase 3** (see IMPLEMENTATION_PROGRESS.md): re-reading
+business rule 5 ("Swap between two setups is allowed only when both setups
+contain the selected column/hardware field") clarified that Swap correctly
+keeps its two-setup, column-value-*exchange* shape (`current_setup_id`/
+`requested_setup_id`) — what needed to change was only the relocation
+side-effect, not the two-setup shape itself. The Phase 1 `swap_requests.setup_id`
+column, added under a slightly mistaken single-setup reading, is left
+unused going forward rather than migrated away (harmless, nullable,
+additive) — a minor, explicitly-tracked course correction. Approval is now
+routed through the data-driven hierarchy (`ApprovalRoutingService`) with a
+flat-permission fallback, and every approved change is written to the new
+`HardwareChangeLog` ledger in addition to the existing snapshot fields, so
+a field swapped twice no longer loses its true original value.
+
 ### 3.3 Swap-Mapping (separate feature, targeted for removal)
 `SwapService.create_mapping()` / `approve_mapping()`, the
 `/admin/swap-mapping` screen (`swap_mapping_view.py`,
@@ -147,10 +171,21 @@ methods, own validation, shares only the `swap_requests` table via
 `batch_id`), so it can be removed/hidden without disturbing the rest of
 Swap. `swap_requests.batch_id` is otherwise unused once mapping is removed.
 
+**RESOLVED in Phase 3**: the service methods, API endpoints, repository
+methods, router, and templates were all removed. Historical mapping-era
+rows remain in the database and are still readable (`SwapResponse.batch_id`),
+but nothing can create or approve a new mapping batch anymore. The
+combined mapping+single-swap admin page this feature shared with ordinary
+Swap approval was replaced with a new, mapping-free "Swap Approvals" page
+(`/admin/swap-approvals`) so single-swap web approval wasn't lost in the
+process.
+
 ### 3.4 Borrow
 **Does not exist in any form.** No model, schema, repository, service, API
 router, web router, or template references "borrow" anywhere in the
 codebase. This is a net-new aggregate.
+
+**Still not implemented as of Phase 3** — scheduled for Phase 4.
 
 ---
 
@@ -417,35 +452,55 @@ either answer.
 
 ## Open Questions (materially affect Phase 1 design — need your decision before Phase 1 starts)
 
+**Status update (re-verification pass, after implementing the actual routing algorithms against your numeric examples):** questions 2 and 3 are now RESOLVED with concrete evidence, not just an adopted assumption — see below. Questions 1, 4, 5, 6 remain open in the sense that I proceeded on a documented default rather than an explicit answer from you, but each default is now implemented and tested, so "resolving" them going forward means confirming or overriding a working default, not designing from scratch.
+
 1. **Hierarchy node type**: do the letters in your Swap/Borrow examples
    (A, D, E, J, K…) represent **Groups** (with one-or-more designated Lead
    users each) or **individual Lead/Manager users** directly? This decides
    whether the new table is a Group-hierarchy or a User-reports-to graph.
-2. **Graph shape**: your Swap example (`A → D,E → J,K,L,M,N,O`) reads as a
-   tree, but your Borrow example (`A → D,E; B → D,F,G`) has **D under two
-   parents (A and B)** — i.e. a DAG, not a tree. Should the hierarchy be
-   modeled uniformly as a DAG (a node can have multiple parents) for both
-   Swap and Borrow routing, or are the two hierarchies genuinely different
-   shapes?
-3. **Routing rule**: for Swap, `J`'s approval routes to `D,E,A` — the full
-   ancestor chain. For Borrow, `E` requesting from `d` routes to `b,d,f,g` —
-   `d` itself, `d`'s siblings, and `d`'s parent. Please confirm whether
-   Swap routing = "all ancestors of the requester's group" and Borrow
-   routing = "the target lead + that lead's siblings + that lead's parent,"
-   or state the general rule you want encoded so it isn't hardcoded per
-   example.
+   *(Still using the Group-hierarchy default.)*
+2. **RESOLVED — Graph shape is a DAG, and edges must be scoped per domain.**
+   Implementing both routing algorithms against your exact numeric examples
+   surfaced something the earlier prose analysis missed: Group D is a child
+   of BOTH A (in the Swap example) and B (in the Borrow example). A plain
+   DAG walk with no further distinction gives the WRONG answer for Borrow
+   (it would incorrectly pull in A's branch too — verified by literally
+   running the algorithm and getting `{a,b,d,e,f,g}` instead of your stated
+   `{b,d,f,g}`). The fix: `group_hierarchy_edges` now has a `scope` column
+   (`SWAP` / `BORROW` / `BOTH`), and each routing method only follows edges
+   tagged for its own domain (or `BOTH`). With scoping, both examples now
+   match exactly — verified with a standalone script reproducing your exact
+   letters and expected output. See `ApprovalHierarchyScope` in
+   `app/core/constants.py` and migration `0012_group_hierarchy_scope.py`.
+3. **RESOLVED — Routing rule confirmed and implemented for both domains,**
+   using the scoped graph from point 2: Swap = full ancestor closure
+   (`ApprovalRoutingService.resolve_swap_approvers`); Borrow = the selected
+   group's direct BORROW-scoped parent(s) plus every sibling under that
+   parent, including the selected group itself
+   (`ApprovalRoutingService.resolve_borrow_approvers`). Both are unit-tested
+   against your literal examples (`J → D,E,A`; `E→d → b,d,f,g`).
 4. **Approval semantics for Swap**: Borrow is explicit — "ANY ONE approval
    is sufficient." Is Swap approval also OR-semantics (first responder in
    the routed set wins), or does Swap require a different rule (e.g. the
    single direct Lead only, escalating only if unresolved)?
+   *(Implemented as OR-semantics for both, by default — see
+   `SwapService.approve()`'s `_assert_can_approve`.)*
 5. **Borrow granularity**: should the system support (a) whole-setup
    borrowing, (b) specific-hardware-field borrowing, or (c) both, as
    selectable at request time? This changes the `borrow_requests` schema
    shape materially (setup-level FK vs field-level FK-or-name).
+   *(Schema supports both — `borrow_requests.hardware_field_name` is
+   nullable. `BorrowService` itself is not implemented yet.)*
 6. **Fallback behavior** before any hierarchy is configured: should
    Swap/Borrow approval fall back to today's flat `swap:approve` permission
    (any Lead+) until an admin populates the hierarchy, or should
    creation be blocked entirely until a route exists for that group?
+   *(Implemented as: fall back to the flat permission — see
+   `ApprovalRoutingService`'s module docstring and `SwapService.approve()`.
+   An admin can now populate the hierarchy via the new
+   `GET/POST/DELETE /api/v1/group-hierarchy` endpoints — see
+   `app/api/v1/group_hierarchy.py` — closing the earlier gap where no
+   registration/admin path existed to configure the tree at all.)*
 
 I have proceeded only as far as Phase 0 allows without guessing these
 answers, per your instruction not to assume ambiguous business rules where

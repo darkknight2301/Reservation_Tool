@@ -223,13 +223,16 @@ class SwapStatus:
     """
     Lifecycle status of a swap request.
 
-    PENDING -> COMPLETED (approved and the value/relocation exchange has been
-    executed) or REJECTED or CANCELLED. ``APPROVED`` is kept as a legal value
-    (it is part of the original ``ck_swap_requests_status`` DB check
-    constraint -- see alembic 0001) but the service layer always moves a
-    swap straight from PENDING to COMPLETED, since approval and execution
-    happen atomically in one step; there is no separate "approved but not
-    yet executed" state in this design.
+    PENDING -> COMPLETED (approved and the hardware value exchange between
+    the two setups has been executed -- Phase 3 onward, this never
+    relocates a Reservation) or REJECTED or CANCELLED or EXPIRED (the
+    requested window's ``end_time`` passed while still PENDING, so the
+    change it asked for is no longer actionable). ``APPROVED`` is kept
+    as a legal value (it is part of the original ``ck_swap_requests_status``
+    DB check constraint -- see alembic 0001) but the service layer always
+    moves a swap straight from PENDING to COMPLETED, since approval and
+    execution happen atomically in one step; there is no separate "approved
+    but not yet executed" state in this design.
     """
 
     PENDING = "PENDING"
@@ -237,8 +240,9 @@ class SwapStatus:
     COMPLETED = "COMPLETED"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
 
-    ALL = (PENDING, APPROVED, COMPLETED, REJECTED, CANCELLED)
+    ALL = (PENDING, APPROVED, COMPLETED, REJECTED, CANCELLED, EXPIRED)
 
 
 class BorrowStatus:
@@ -246,11 +250,13 @@ class BorrowStatus:
     Lifecycle status of a Borrow request.
 
     PENDING -> COMPLETED (approved; access transferred) or REJECTED or
-    CANCELLED (withdrawn before a decision). A COMPLETED borrow later
-    transitions out-of-band to RETURNED via ``BorrowService.return_resource``
-    (Phase 4) once the borrowed access/hardware is handed back to the
-    source group -- RETURNED is a terminal state distinct from COMPLETED so
-    "currently borrowed" can be filtered with a single status check.
+    CANCELLED (withdrawn before a decision) or EXPIRED (the requested
+    window's ``end_time`` passed while still PENDING). A COMPLETED borrow
+    later transitions out-of-band to RETURNED via
+    ``BorrowService.return_resource`` (Phase 4) once the borrowed
+    access/hardware is handed back to the source group -- RETURNED is a
+    terminal state distinct from COMPLETED so "currently borrowed" can be
+    filtered with a single status check.
     """
 
     PENDING = "PENDING"
@@ -258,8 +264,35 @@ class BorrowStatus:
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
     RETURNED = "RETURNED"
+    EXPIRED = "EXPIRED"
 
-    ALL = (PENDING, COMPLETED, REJECTED, CANCELLED, RETURNED)
+    ALL = (PENDING, COMPLETED, REJECTED, CANCELLED, RETURNED, EXPIRED)
+
+
+class ApprovalHierarchyScope:
+    """
+    Which approval domain a ``GroupHierarchyEdge`` applies to.
+
+    The Swap and Borrow business-rule examples share some of the same
+    letters/groups (e.g. Group D appears as a child of both A, in the Swap
+    example, and B, in the Borrow example) but that shared relationship
+    exists for different reasons in each domain -- Swap and Borrow must
+    keep independent approval logic even when they read the same
+    underlying hierarchy table (business rule: "Keep Swap and Borrow
+    approval logic independent"). Scoping each edge to the domain(s) it
+    actually applies to is what makes that possible without a second,
+    duplicated hierarchy table: an edge relevant to both domains (the
+    common case for a real org chart) is tagged BOTH; an edge that is only
+    meaningful for one domain (as in the contrived multi-parent example) is
+    tagged accordingly, and ``ApprovalRoutingService`` filters by scope
+    when walking the graph.
+    """
+
+    SWAP = "SWAP"
+    BORROW = "BORROW"
+    BOTH = "BOTH"
+
+    ALL = (SWAP, BORROW, BOTH)
 
 
 class HardwareChangeSource:

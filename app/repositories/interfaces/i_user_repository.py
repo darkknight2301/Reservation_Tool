@@ -31,3 +31,13 @@ class IUserRepository(Protocol):
 
     def set_groups(self, user: User, group_ids: List[int]) -> User:
         ...
+
+    def list_active_by_group_ids_and_roles(self, group_ids: List[int], role_names: List[str]) -> List[User]:
+        """
+        Every APPROVED, active User whose ``group_id`` is in ``group_ids`` AND
+        whose Role name is in ``role_names``. Used by ``ApprovalRoutingService``
+        to resolve "the Lead/Manager of Group X (or one of its ancestors)"
+        without hardcoding any org chart -- who qualifies is entirely a
+        function of existing User/Role/Group data.
+        """
+        ...

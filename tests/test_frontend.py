@@ -231,9 +231,14 @@ def test_unreserve_dialog_no_warning_when_no_pending_swap(client, web_login, dev
     assert "disabled" not in response.text.split('type="submit"')[1].split(">")[0]
 
 
-def test_unreserve_dialog_shows_warning_when_swap_pending(
+def test_unreserve_dialog_shows_informational_warning_when_swap_pending_but_stays_enabled(
     client, web_login, developer_user, auth_headers, make_setup, product
 ):
+    """
+    Reservation and Swap are independent workflows (business rule 1): the
+    dialog still tells the user a swap is pending, but no longer disables
+    Unreserve -- see Phase 2.
+    """
     setup_a = make_setup(product_id=product.id)
     setup_b = make_setup(product_id=product.id)
     start = datetime.utcnow() + timedelta(hours=1)
@@ -248,7 +253,7 @@ def test_unreserve_dialog_shows_warning_when_swap_pending(
     reservation_id = create_resp.json()["id"]
     client.post(
         "/api/v1/swaps",
-        json={"reservation_id": reservation_id, "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=dev_headers,
     )
 
@@ -257,7 +262,7 @@ def test_unreserve_dialog_shows_warning_when_swap_pending(
     assert response.status_code == 200
     assert "pending swap request" in response.text.lower()
     submit_button_segment = response.text.split('type="submit"')[1].split(">")[0]
-    assert "disabled" in submit_button_segment
+    assert "disabled" not in submit_button_segment
 
 
 # ---------------------------------------------------------------------

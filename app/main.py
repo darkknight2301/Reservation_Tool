@@ -22,7 +22,7 @@ from app.web.routers.docs_view import router as docs_web_router
 from app.web.routers.groups_view import router as groups_web_router
 from app.web.routers.products_view import router as products_web_router
 from app.web.routers.setups_view import router as setups_web_router
-from app.web.routers.swap_mapping_view import router as swap_mapping_web_router
+from app.web.routers.swap_approvals_view import router as swap_approvals_web_router
 from app.web.routers.users_view import router as users_web_router
 
 configure_logging()
@@ -74,7 +74,10 @@ def create_app() -> FastAPI:
     app.include_router(groups_web_router)
     app.include_router(users_web_router)
     app.include_router(setups_web_router)
-    app.include_router(swap_mapping_web_router)
+    # swap_mapping_web_router removed in Phase 3 -- the multi-node swap-mapping
+    # feature was retired per business rule 6 ("remove/avoid swap-mapping
+    # functionality"). See ARCHITECTURE_ASSESSMENT.md section 3.3.
+    app.include_router(swap_approvals_web_router)
     app.include_router(announcements_web_router)
     app.include_router(audit_web_router)
     app.include_router(developer_logs_web_router)

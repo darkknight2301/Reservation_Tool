@@ -5,6 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.constants import UserStatus
 from app.models.group import Group
 from app.models.role import Role
 from app.models.user import User
@@ -93,3 +94,19 @@ class UserRepository:
         self._db.flush()
         self._db.refresh(user)
         return user
+
+    def list_active_by_group_ids_and_roles(self, group_ids: List[int], role_names: List[str]) -> List[User]:
+        if not group_ids or not role_names:
+            return []
+        return (
+            self._db.query(User)
+            .join(Role, User.role_id == Role.id)
+            .filter(
+                User.group_id.in_(group_ids),
+                User.status == UserStatus.APPROVED,
+                User.is_active.is_(True),
+                Role.name.in_(role_names),
+            )
+            .order_by(User.email.asc())
+            .all()
+        )

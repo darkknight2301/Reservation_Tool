@@ -446,7 +446,7 @@ def test_swap_request_then_approve(client, auth_headers, developer_user, make_us
 
     swap_resp = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": reservation["id"], "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=dev_headers,
     )
     assert swap_resp.status_code == 201
@@ -469,7 +469,7 @@ def test_swap_to_unavailable_setup_rejected(client, auth_headers, developer_user
 
     response = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": reservation["id"], "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=dev_headers,
     )
     assert response.status_code == 409
@@ -483,7 +483,7 @@ def test_swap_other_users_reservation_rejected(client, auth_headers, developer_u
 
     response = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": reservation["id"], "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=auth_headers(second_developer_user),
     )
     assert response.status_code == 403
@@ -511,7 +511,8 @@ def test_unreserve_another_users_reservation_rejected(client, auth_headers, deve
     assert response.status_code == 403
 
 
-def test_unreserve_blocked_while_swap_pending(client, auth_headers, developer_user, make_user, make_setup, product):
+def test_unreserve_allowed_while_swap_pending(client, auth_headers, developer_user, make_user, make_setup, product):
+    """Reservation and Swap are independent workflows (business rule 1) -- see Phase 2."""
     dev_headers = auth_headers(developer_user)
     setup_a = make_setup(product_id=product.id)
     setup_b = make_setup(product_id=product.id)
@@ -519,13 +520,25 @@ def test_unreserve_blocked_while_swap_pending(client, auth_headers, developer_us
 
     swap_resp = client.post(
         "{0}/swaps".format(API),
-        json={"reservation_id": reservation["id"], "requested_setup_id": setup_b.id},
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=dev_headers,
     )
     assert swap_resp.status_code == 201
 
     cancel_resp = client.patch("{0}/reservations/{1}/cancel".format(API, reservation["id"]), headers=dev_headers)
-    assert cancel_resp.status_code == 409
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["status"] == "CANCELLED"
+
+    # Phase 3: Swap no longer references Reservation state at all -- the
+    # requester's original reservation being cancelled has no bearing on
+    # whether the swap (an independent setup-to-setup hardware exchange)
+    # can still be approved.
+    approver = make_user(role_name=RoleName.LEAD)
+    approve_resp = client.patch(
+        "{0}/swaps/{1}/approve".format(API, swap_resp.json()["id"]), json={}, headers=auth_headers(approver)
+    )
+    assert approve_resp.status_code == 200
+    assert approve_resp.json()["status"] == "COMPLETED"
 
 
 # ---------------------------------------------------------------------
@@ -586,3 +599,48 @@ def test_reservation_create_is_audit_logged(client, auth_headers, developer_user
     )
     assert listing.status_code == 200
     assert listing.json()["total_items"] >= 1
+
+
+# ---------------------------------------------------------------------
+# Approval hierarchy admin configuration (GET/POST/DELETE /group-hierarchy)
+# ---------------------------------------------------------------------
+
+def test_owner_can_configure_and_remove_a_hierarchy_edge(client, auth_headers, owner_user, group):
+    owner_headers = auth_headers(owner_user)
+
+    child_resp = client.post(
+        "{0}/groups".format(API), json={"name": "Child Group For Hierarchy Test"}, headers=owner_headers
+    )
+    assert child_resp.status_code == 201
+    child_group_id = child_resp.json()["id"]
+
+    create_resp = client.post(
+        "{0}/group-hierarchy".format(API),
+        json={"parent_group_id": group.id, "child_group_id": child_group_id, "scope": "BORROW"},
+        headers=owner_headers,
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["scope"] == "BORROW"
+
+    listing = client.get("{0}/group-hierarchy".format(API), headers=owner_headers)
+    assert listing.status_code == 200
+    assert any(
+        e["parent_group_id"] == group.id and e["child_group_id"] == child_group_id and e["scope"] == "BORROW"
+        for e in listing.json()
+    )
+
+    delete_resp = client.request(
+        "DELETE", "{0}/group-hierarchy".format(API),
+        json={"parent_group_id": group.id, "child_group_id": child_group_id, "scope": "BORROW"},
+        headers=owner_headers,
+    )
+    assert delete_resp.status_code == 204
+
+
+def test_developer_cannot_configure_a_hierarchy_edge(client, auth_headers, developer_user, group):
+    create_resp = client.post(
+        "{0}/group-hierarchy".format(API),
+        json={"parent_group_id": group.id, "child_group_id": group.id + 999999, "scope": "SWAP"},
+        headers=auth_headers(developer_user),
+    )
+    assert create_resp.status_code == 403
