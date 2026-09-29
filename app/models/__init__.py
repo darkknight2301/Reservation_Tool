@@ -23,11 +23,13 @@ from app.models.reservation import Reservation  # noqa: F401
 from app.models.role import Role  # noqa: F401
 from app.models.setup import Setup  # noqa: F401
 from app.models.setup_access_grant import SetupAccessGrant  # noqa: F401
+from app.models.setup_custom_field_baseline import SetupCustomFieldBaseline  # noqa: F401
 from app.models.setup_custom_field_value import SetupCustomFieldValue  # noqa: F401
 from app.models.setup_hardware_baseline import SetupHardwareBaseline  # noqa: F401
 from app.models.swap_request import SwapRequest  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_group import user_groups  # noqa: F401
+import app.models.baseline_capture  # noqa: F401,E402  (registers the auto-baseline mapper events)
 
 __all__ = [
     "Announcement",
@@ -49,6 +51,7 @@ __all__ = [
     "Setup",
     "SetupAccessGrant",
     "SetupCustomFieldValue",
+    "SetupCustomFieldBaseline",
     "SetupHardwareBaseline",
     "SwapRequest",
     "User",

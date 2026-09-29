@@ -210,6 +210,17 @@ def test_swap_dialog_lists_candidate_setups(client, web_login, developer_user, a
     assert "requires approval" in response.text.lower()
 
 
+def test_swap_dialog_opens_from_a_setup_without_any_reservation(client, web_login, developer_user, make_setup, product):
+    setup_a = make_setup(product_id=product.id)
+    setup_b = make_setup(product_id=product.id)
+
+    web_login(developer_user)
+    response = client.get("/setups/swap-dialog", params={"setup_id": setup_a.id})
+    assert response.status_code == 200
+    assert setup_b.hostname in response.text
+    assert 'name="start_time"' in response.text and 'name="announcement_channels"' in response.text
+
+
 # ---------------------------------------------------------------------
 # Unreserve dialog + pending-swap warning
 # ---------------------------------------------------------------------
@@ -231,13 +242,12 @@ def test_unreserve_dialog_no_warning_when_no_pending_swap(client, web_login, dev
     assert "disabled" not in response.text.split('type="submit"')[1].split(">")[0]
 
 
-def test_unreserve_dialog_shows_informational_warning_when_swap_pending_but_stays_enabled(
+def test_unreserve_dialog_ignores_pending_swaps_because_swap_is_independent_of_reservation(
     client, web_login, developer_user, auth_headers, make_setup, product
 ):
     """
-    Reservation and Swap are independent workflows (business rule 1): the
-    dialog still tells the user a swap is pending, but no longer disables
-    Unreserve -- see Phase 2.
+    Swap no longer references a Reservation at all (independent workflows),
+    so a pending swap on the same setups never appears in the Unreserve dialog.
     """
     setup_a = make_setup(product_id=product.id)
     setup_b = make_setup(product_id=product.id)
@@ -251,16 +261,17 @@ def test_unreserve_dialog_shows_informational_warning_when_swap_pending_but_stay
         headers=dev_headers,
     )
     reservation_id = create_resp.json()["id"]
-    client.post(
+    swap_resp = client.post(
         "/api/v1/swaps",
         json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
         headers=dev_headers,
     )
+    assert swap_resp.status_code == 201
 
     web_login(developer_user)
     response = client.get("/setups/unreserve-dialog", params={"reservation_ids": str(reservation_id)})
     assert response.status_code == 200
-    assert "pending swap request" in response.text.lower()
+    assert "pending swap request" not in response.text.lower()
     submit_button_segment = response.text.split('type="submit"')[1].split(">")[0]
     assert "disabled" not in submit_button_segment
 

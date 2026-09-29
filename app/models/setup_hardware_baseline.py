@@ -50,3 +50,13 @@ class SetupHardwareBaseline(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper only
         return "<SetupHardwareBaseline setup_id={0}>".format(self.setup_id)
+
+
+# Names of the fixed hardware fields tracked by the baseline, derived from the
+# table itself (never a separate hardcoded list) so the Original-vs-Current
+# comparison and the UI highlighting automatically follow the schema.
+BASELINE_FIELD_NAMES = tuple(
+    column.name
+    for column in SetupHardwareBaseline.__table__.columns
+    if column.name not in ("id", "setup_id", "captured_at")
+)

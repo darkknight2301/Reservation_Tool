@@ -30,7 +30,9 @@
 
         reserveBtn.disabled = !allAvailable;
         unreserveBtn.disabled = !allMine;
-        swapBtn.disabled = !(selectedRows.length === 1 && allMine);
+        // Swap is independent of Reservation: it only needs exactly one selected setup
+        // (group access is enforced server-side), not a reservation of your own.
+        swapBtn.disabled = selectedRows.length !== 1;
 
         const selectedSetupIds = selectedRows.map(function (row) { return row.dataset.setupId; }).join(",");
         const selectedReservationIds = selectedRows
@@ -40,7 +42,6 @@
 
         reserveBtn.setAttribute("data-setup-ids", selectedSetupIds);
         unreserveBtn.setAttribute("data-reservation-ids", selectedReservationIds);
-        swapBtn.setAttribute("data-reservation-ids", selectedReservationIds);
         swapBtn.setAttribute("data-current-setup-id", selectedRows.length ? selectedRows[0].dataset.setupId : "");
     }
 

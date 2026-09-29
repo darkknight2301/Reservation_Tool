@@ -16,6 +16,7 @@ from app.repositories.sqlalchemy.audit_repository import AuditLogRepository
 from app.repositories.sqlalchemy.export_repository import ExportRepository
 from app.repositories.sqlalchemy.group_repository import GroupRepository
 from app.repositories.sqlalchemy.group_hierarchy_repository import GroupHierarchyRepository
+from app.repositories.sqlalchemy.hardware_baseline_repository import HardwareBaselineRepository
 from app.repositories.sqlalchemy.hardware_change_log_repository import HardwareChangeLogRepository
 from app.repositories.sqlalchemy.product_repository import ProductRepository
 from app.repositories.sqlalchemy.password_reset_repository import PasswordResetRepository
@@ -34,6 +35,7 @@ from app.services.developer_logs_service import DeveloperLogsService
 from app.services.email_service import EmailService
 from app.services.export_service import ExportService
 from app.services.group_service import GroupService
+from app.services.hardware_state_service import HardwareStateService
 from app.services.group_hierarchy_service import GroupHierarchyService
 from app.services.import_service import ImportService
 from app.services.notification_service import NotificationService
@@ -212,6 +214,16 @@ def get_group_hierarchy_service(
     return GroupHierarchyService(group_hierarchy_repository, group_repository, audit_service)
 
 
+def get_hardware_baseline_repository(db: Session = Depends(get_db)) -> HardwareBaselineRepository:
+    return HardwareBaselineRepository(db)
+
+
+def get_hardware_state_service(
+    baseline_repository: HardwareBaselineRepository = Depends(get_hardware_baseline_repository),
+) -> HardwareStateService:
+    return HardwareStateService(baseline_repository)
+
+
 def get_swap_service(
     swap_repository: SwapRepository = Depends(get_swap_repository),
     reservation_repository: ReservationRepository = Depends(get_reservation_repository),
@@ -221,10 +233,12 @@ def get_swap_service(
     approval_routing_service: ApprovalRoutingService = Depends(get_approval_routing_service),
     template_service: TemplateService = Depends(get_template_service),
     notification_service: NotificationService = Depends(get_notification_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ) -> SwapService:
     return SwapService(
         swap_repository, reservation_repository, setup_repository, audit_service,
         hardware_change_log_repository, approval_routing_service, template_service, notification_service,
+        hardware_state_service,
     )
 
 

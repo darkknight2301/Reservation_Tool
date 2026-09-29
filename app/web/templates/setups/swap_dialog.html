@@ -3,7 +3,7 @@
         <div class="modal-content">
             <form hx-post="/setups/swap" hx-target="#setupsTableContainer" hx-swap="innerHTML">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2 text-warning"></i>Swap Column(s) Between Your Setups</h5>
+                    <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2 text-warning"></i>Swap Column(s) Between Setups</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -11,7 +11,7 @@
                     <p class="small text-muted mb-1">Current setup</p>
                     <p class="mb-3"><i class="bi bi-hdd-network me-1"></i>{{ current_setup.hostname }} ({{ current_setup.ip_address }})</p>
 
-                    <label class="form-label small">Swap with (must be another setup you currently have reserved)</label>
+                    <label class="form-label small">Swap with (another setup in your group)</label>
                     {% if candidate_setups %}
                     <select class="form-select" name="requested_setup_id" required>
                         {% for setup in candidate_setups %}
@@ -25,18 +25,45 @@
                             <option value="{{ col }}">{{ col|replace("_", " ")|title }}</option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">Ctrl/Cmd-click (or Shift-click for a range) to select more than one column. Leave nothing selected to swap every common column between the two setups. For a product-specific (custom) column instead of a hardware field, use the API directly with that column's exact name -- it must exist on both setups' templates.</div>
+                        <div class="form-text">Ctrl/Cmd-click (or Shift-click for a range) to select more than one column. Leave nothing selected to swap every common column between the two setups. Only columns present on both setups can be exchanged.</div>
                     </div>
                     {% else %}
-                    <div class="alert alert-warning py-2 mb-0">You have no other reserved setups to swap with.</div>
+                    <div class="alert alert-warning py-2 mb-0">There is no other eligible setup (in your group, same product) to swap with.</div>
                     {% endif %}
 
                     <div class="mt-3">
                         <label class="form-label small">Reason (optional)</label>
                         <textarea class="form-control" name="reason" rows="2"></textarea>
                     </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label small">Start time (optional)</label>
+                            <input type="datetime-local" class="form-control" name="start_time">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">End time (optional)</label>
+                            <input type="datetime-local" class="form-control" name="end_time">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label small d-block">Announce this swap request via</label>
+                        {% for channel in announcement_channels %}
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" name="announcement_channels" value="{{ channel }}" id="swapchan_{{ channel }}">
+                            <label class="form-check-label small" for="swapchan_{{ channel }}">
+                                {% if channel == "WALL" %}Wall Message
+                                {% elif channel == "MAIL_LEADS" %}Mail Leads
+                                {% elif channel == "MAIL_GROUP" %}Groups
+                                {% elif channel == "MAIL_ALL" %}All Users
+                                {% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                        <textarea class="form-control mt-2" name="announcement_message" rows="2" placeholder="Custom announcement message (optional)"></textarea>
+                        <div class="form-text">The approving leads for this setup's group are always emailed, regardless of the channels selected here.</div>
+                    </div>
                     <div class="alert alert-info small mt-3 mb-0">
-                        <i class="bi bi-info-circle me-1"></i>This request requires approval by a Lead or above before the values are exchanged. Neither setup's reservation is affected.
+                        <i class="bi bi-info-circle me-1"></i>This request requires approval by a Lead or above before the values are exchanged. Reservations are not affected and are not required.
                     </div>
                 </div>
                 <div class="modal-footer">

@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from app.api.deps import (
     get_export_service,
     get_group_service,
+    get_hardware_state_service,
     get_product_service,
     get_reservation_service,
     get_setup_service,
@@ -25,7 +26,7 @@ from app.api.deps import (
     get_user_service,
 )
 from app.core.constants import AnnouncementChannel, PermissionCode, ReservationStatus, SetupStatus, UserStatus
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, NotFoundError
 from app.models.reservation import Reservation
 from app.models.user import User
 from app.schemas.reservation import ReservationCreateRequest, ReservationFilter
@@ -34,6 +35,7 @@ from app.schemas.swap_request import SwapCreateRequest
 from app.schemas.user import UserFilter
 from app.services.export_service import ExportService
 from app.services.group_service import GroupService
+from app.services.hardware_state_service import HardwareStateService
 from app.services.product_service import ProductService
 from app.services.reservation_service import ReservationService
 from app.services.setup_service import SetupService
@@ -83,8 +85,14 @@ def _load_table_context(
     setup_service: SetupService,
     reservation_service: ReservationService,
     template_service: Optional[TemplateService] = None,
+    hardware_state_service: Optional[HardwareStateService] = None,
 ) -> dict:
     setups, total_items = setup_service.list(filters, page, page_size)
+
+    # ORIGINAL-vs-CURRENT comparison: {setup_id: [changed field names]}. The
+    # template highlights exactly these cells, fixed or custom, with no
+    # per-field logic anywhere in the web layer.
+    changed_fields = hardware_state_service.changed_fields(setups) if hardware_state_service is not None else {}
 
     # The table only renders a single product's custom columns when the view
     # is scoped to exactly one Product (its template is otherwise ambiguous
@@ -109,6 +117,7 @@ def _load_table_context(
             "total_pages": compute_total_pages(total_items, page_size),
             "filters": filters,
             "custom_columns": custom_columns,
+            "changed_fields": changed_fields,
         }
     )
     return context
@@ -130,6 +139,7 @@ def setups_page(
     product_service: ProductService = Depends(get_product_service),
     group_service: GroupService = Depends(get_group_service),
     template_service: TemplateService = Depends(get_template_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
     """Render the full reservation table screen (initial page load)."""
     products, _ = product_service.list(page=1, page_size=200)
@@ -145,7 +155,8 @@ def setups_page(
         product_id=resolved_product_id, group_id=resolved_group_id, status=status, location=location, search=search
     )
     context = _load_table_context(
-        request, filters, page, page_size, current_user, setup_service, reservation_service, template_service
+        request, filters, page, page_size, current_user, setup_service, reservation_service, template_service,
+        hardware_state_service,
     )
     context.update({"products": products, "groups": groups})
     return templates.TemplateResponse("setups/table.html", context)
@@ -165,6 +176,7 @@ def setups_table_partial(
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
     template_service: TemplateService = Depends(get_template_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
     """HTMX partial: re-render just the table body + pagination on filter/search/page change."""
     filters = SetupFilter(
@@ -173,7 +185,8 @@ def setups_table_partial(
         status=status, location=location, search=search,
     )
     context = _load_table_context(
-        request, filters, page, page_size, current_user, setup_service, reservation_service, template_service
+        request, filters, page, page_size, current_user, setup_service, reservation_service, template_service,
+        hardware_state_service,
     )
     return templates.TemplateResponse("setups/_table_body.html", context)
 
@@ -205,6 +218,7 @@ def reserve_submit(
     current_user: User = Depends(require_web_permission(PermissionCode.RESERVATION_CREATE)),
     reservation_service: ReservationService = Depends(get_reservation_service),
     setup_service: SetupService = Depends(get_setup_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
     """Create a reservation for every selected setup over the same time window, with optional announcement broadcast."""
     ids = [int(value) for value in setup_ids.split(",") if value]
@@ -227,7 +241,10 @@ def reserve_submit(
             errors.append("Setup {0}: {1}".format(setup_id, exc.message))
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
+    context = _load_table_context(
+        request, filters, 1, 200, current_user, setup_service, reservation_service,
+        hardware_state_service=hardware_state_service,
+    )
     response = templates.TemplateResponse("setups/_table_body.html", context)
 
     if errors:
@@ -240,24 +257,42 @@ def reserve_submit(
 @router.get("/setups/swap-dialog")
 def swap_dialog(
     request: Request,
-    reservation_id: int,
+    setup_id: Optional[int] = None,
+    reservation_id: Optional[int] = None,
     current_user: User = Depends(require_web_permission(PermissionCode.SWAP_REQUEST)),
     reservation_service: ReservationService = Depends(get_reservation_service),
     setup_service: SetupService = Depends(get_setup_service),
+    swap_service: SwapService = Depends(get_swap_service),
+    template_service: TemplateService = Depends(get_template_service),
 ):
-    """Render the Swap dialog: pick a setup to exchange column(s) with. Neither setup's reservation is affected."""
-    reservation = reservation_service.get_by_id(reservation_id)
-    current_setup = setup_service.get_by_id(reservation.setup_id)
+    """
+    Render the Swap dialog for one setup: pick another setup to exchange
+    column(s) with. Swap is independent of Reservation, so the dialog is
+    opened from a *setup* (``setup_id``); ``reservation_id`` is only
+    accepted as a legacy way to identify the same setup. Only setups the
+    user has group/setup access to are offered.
+    """
+    if setup_id is None and reservation_id is not None:
+        setup_id = reservation_service.get_by_id(reservation_id).setup_id
+    if setup_id is None:
+        raise NotFoundError("A setup must be selected to raise a swap.")
+    current_setup = setup_service.get_by_id(setup_id)
 
     candidate_setups, _ = setup_service.list(SetupFilter(product_id=current_setup.product_id), page=1, page_size=200)
     candidate_setups = [
-        s for s in candidate_setups if s.id != current_setup.id and s.status not in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED)
+        s for s in candidate_setups
+        if s.id != current_setup.id
+        and s.status not in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED)
+        and swap_service.can_access_setup(s, current_user)
     ]
+    custom_column_names = [c.name for c in template_service.get_custom_columns(current_setup.product_id)]
 
     context = base_context(request, current_user)
     context.update({
-        "reservation": reservation, "current_setup": current_setup, "candidate_setups": candidate_setups,
-        "swappable_columns": SWAPPABLE_SETUP_FIELDS,
+        "current_setup": current_setup, "candidate_setups": candidate_setups,
+        "swappable_columns": list(SWAPPABLE_SETUP_FIELDS) + custom_column_names,
+        "announcement_channels": AnnouncementChannel.ALL,
+        "can_raise": swap_service.can_access_setup(current_setup, current_user),
     })
     return templates.TemplateResponse("setups/swap_dialog.html", context)
 
@@ -269,10 +304,15 @@ def swap_submit(
     requested_setup_id: int = Form(...),
     column_names: List[str] = Form(default=[]),
     reason: str = Form(default=""),
+    start_time: str = Form(default=""),
+    end_time: str = Form(default=""),
+    announcement_channels: List[str] = Form(default=[]),
+    announcement_message: str = Form(default=""),
     current_user: User = Depends(require_web_permission(PermissionCode.SWAP_REQUEST)),
     swap_service: SwapService = Depends(get_swap_service),
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
     """Submit a swap request (one or more columns, or none to swap every common column) for approval."""
     message, message_type = "Swap request submitted for approval.", "success"
@@ -280,15 +320,23 @@ def swap_submit(
         payload = SwapCreateRequest(
             current_setup_id=current_setup_id, requested_setup_id=requested_setup_id,
             column_names=column_names or None, reason=reason or None,
+            start_time=datetime.fromisoformat(start_time) if start_time else None,
+            end_time=datetime.fromisoformat(end_time) if end_time else None,
+            announcement_channels=announcement_channels,
+            announcement_message=announcement_message or None,
         )
         swap_service.create(payload, current_user)
     except AppError as exc:
         message, message_type = exc.message, "error"
-    except ValidationError as exc:
-        message, message_type = "; ".join(err["msg"] for err in exc.errors()), "error"
+    except (ValidationError, ValueError) as exc:
+        message = "; ".join(err["msg"] for err in exc.errors()) if isinstance(exc, ValidationError) else str(exc)
+        message_type = "error"
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
+    context = _load_table_context(
+        request, filters, 1, 200, current_user, setup_service, reservation_service,
+        hardware_state_service=hardware_state_service,
+    )
     response = templates.TemplateResponse("setups/_table_body.html", context)
     response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response
@@ -326,6 +374,7 @@ def unreserve_submit(
     current_user: User = Depends(get_current_web_user),
     reservation_service: ReservationService = Depends(get_reservation_service),
     setup_service: SetupService = Depends(get_setup_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
     """Cancel (unreserve) every selected reservation."""
     ids = [int(value) for value in reservation_ids.split(",") if value]
@@ -337,7 +386,10 @@ def unreserve_submit(
             errors.append("Reservation {0}: {1}".format(reservation_id, exc.message))
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
+    context = _load_table_context(
+        request, filters, 1, 200, current_user, setup_service, reservation_service,
+        hardware_state_service=hardware_state_service,
+    )
     response = templates.TemplateResponse("setups/_table_body.html", context)
     if errors:
         response.headers["HX-Trigger"] = hx_trigger("; ".join(errors), "warning", close_dialog=False)
@@ -405,6 +457,7 @@ async def setup_edit_save(
     setup_service: SetupService = Depends(get_setup_service),
     reservation_service: ReservationService = Depends(get_reservation_service),
     template_service: TemplateService = Depends(get_template_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
     """Update a Setup's fields (and its product's custom template field values), then re-render the table."""
     form = await request.form()
@@ -452,7 +505,10 @@ async def setup_edit_save(
         message, message_type = str(exc), "error"
 
     filters = SetupFilter()
-    context = _load_table_context(request, filters, 1, 200, current_user, setup_service, reservation_service)
+    context = _load_table_context(
+        request, filters, 1, 200, current_user, setup_service, reservation_service,
+        hardware_state_service=hardware_state_service,
+    )
     response = templates.TemplateResponse("setups/_table_body.html", context)
     response.headers["HX-Trigger"] = hx_trigger(message, message_type, close_dialog=(message_type == "success"))
     return response

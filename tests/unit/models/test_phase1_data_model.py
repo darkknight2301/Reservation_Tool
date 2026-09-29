@@ -36,10 +36,18 @@ from app.models.swap_request import SwapRequest
 # ---------------------------------------------------------------------
 
 def test_setup_hardware_baseline_can_be_captured_and_is_independent_of_current_value(db_session, setup):
-    """Baseline is a separate row; mutating the live Setup does not touch it."""
-    baseline = SetupHardwareBaseline(setup_id=setup.id, ssd="Baseline-SSD", hdd="Baseline-HDD")
-    db_session.add(baseline)
+    """
+    A baseline row is captured automatically when the Setup is created
+    (``app.models.baseline_capture``); mutating the live Setup afterwards
+    does not touch it.
+    """
+    setup.ssd = "Original-SSD"
+    setup.hdd = "Original-HDD"
+    db_session.add(setup)
     db_session.commit()
+
+    baseline = db_session.query(SetupHardwareBaseline).filter_by(setup_id=setup.id).one()
+    assert baseline.ssd is None, "Baseline holds the values as of creation, not later edits."
 
     # Simulate a swap changing the CURRENT/EFFECTIVE value on the Setup row.
     setup.ssd = "New-SSD-After-Swap"
@@ -48,15 +56,12 @@ def test_setup_hardware_baseline_can_be_captured_and_is_independent_of_current_v
     db_session.refresh(setup)
 
     stored_baseline = db_session.query(SetupHardwareBaseline).filter_by(setup_id=setup.id).one()
-    assert stored_baseline.ssd == "Baseline-SSD", "Baseline must not change when the effective value changes."
+    assert stored_baseline.ssd is None, "Baseline must not change when the effective value changes."
     assert setup.ssd == "New-SSD-After-Swap"
 
 
 def test_setup_hardware_baseline_unique_per_setup(db_session, setup):
-    """Only one baseline row is legal per Setup (uq_setup_hardware_baseline_setup_id)."""
-    db_session.add(SetupHardwareBaseline(setup_id=setup.id, ssd="A"))
-    db_session.commit()
-
+    """Only one baseline row is legal per Setup (uq_setup_hardware_baseline_setup_id); the auto-captured one already exists."""
     db_session.add(SetupHardwareBaseline(setup_id=setup.id, ssd="B"))
     with pytest.raises(IntegrityError):
         db_session.commit()

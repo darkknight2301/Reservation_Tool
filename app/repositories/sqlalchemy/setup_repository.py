@@ -5,6 +5,9 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Query, Session
 
 from app.models.setup import Setup
+from app.models.setup_access_grant import SetupAccessGrant
+from app.models.setup_custom_field_baseline import SetupCustomFieldBaseline
+from app.models.setup_hardware_baseline import SetupHardwareBaseline
 from app.schemas.setup import SetupFilter
 from app.utils.pagination import paginate_query
 
@@ -17,6 +20,15 @@ class SetupRepository:
 
     def get_by_id(self, setup_id: int) -> Optional[Setup]:
         return self._db.query(Setup).filter(Setup.id == setup_id).first()
+
+    def get_active_grant_group_ids(self, setup_id: int) -> List[int]:
+        """Group ids currently holding temporary (borrowed) access to this setup."""
+        rows = (
+            self._db.query(SetupAccessGrant.granted_to_group_id)
+            .filter(SetupAccessGrant.setup_id == setup_id, SetupAccessGrant.is_active.is_(True))
+            .all()
+        )
+        return [row[0] for row in rows]
 
     def get_by_ip_or_hostname(self, ip_address: str, hostname: str) -> Optional[Setup]:
         return (
@@ -77,6 +89,11 @@ class SetupRepository:
     def delete(self, setup_id: int) -> None:
         setup = self.get_by_id(setup_id)
         if setup is not None:
+            # A setup's ORIGINAL/BASELINE rows are automatically created with it
+            # (see app.models.baseline_capture) and have no meaning without it,
+            # so they go with it; otherwise their FK would block deleting any setup.
+            self._db.query(SetupHardwareBaseline).filter(SetupHardwareBaseline.setup_id == setup_id).delete(synchronize_session=False)
+            self._db.query(SetupCustomFieldBaseline).filter(SetupCustomFieldBaseline.setup_id == setup_id).delete(synchronize_session=False)
             self._db.delete(setup)
             self._db.flush()
 

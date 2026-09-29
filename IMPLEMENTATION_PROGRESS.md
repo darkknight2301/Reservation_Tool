@@ -1,3 +1,90 @@
+CURRENT_PHASE: Phase 4 (Swap) COMPLETION PASS -- complete. Phases 1-4 (user numbering) are now all implemented. Awaiting approval before Phase 5. Borrow is NOT started.
+
+COMPLETED (this pass; closes the gaps found in the Phase 1-4 validation):
+  Decisions confirmed by user: (1) Swap and Reservation are fully independent -- Swap must NOT require a reservation;
+  authorisation = setup/group access. (2) Baseline covers BOTH fixed hardware fields and custom template columns.
+  1. Swap no longer depends on Reservation. `SwapService.create()` no longer requires/reads an ACTIVE reservation and no
+     longer stores `reservation_id` (new rows leave it NULL; historical rows keep theirs). Access rule
+     (`_assert_has_setup_access`, checked on BOTH setups): requester's primary `group_id` or any `user_groups` group must
+     match the setup's owning group OR a group holding an ACTIVE `setup_access_grants` (borrow) row; OWNER always allowed;
+     a setup with no group is unrestricted. NOT hierarchy-based (hierarchy still only routes approvals).
+  2. Original/Baseline capture is automatic. `app/models/baseline_capture.py` (SQLAlchemy `after_insert` hooks) writes a
+     `setup_hardware_baseline` row for every new Setup and a `setup_custom_field_baselines` row for the first value of
+     every custom column -- covers API create, both Excel-import paths, seed script and test fixtures without touching them.
+     Baselines are insert-only. Deleting a Setup deletes its baseline rows (`SetupRepository.delete`).
+  3. Custom columns now have an Original view: new table `setup_custom_field_baselines` (setup, template column, value).
+     Swap approval captures a missing baseline (fixed or custom) from the pre-swap value BEFORE changing anything, and
+     the hardware change ledger now records custom-column swaps too (previously fixed fields only).
+  4. Generic Original-vs-Current detection: `HardwareStateService.changed_fields(setups)` -> {setup_id: [field names]}.
+     Fixed-field list is derived from the baseline table's own columns (`BASELINE_FIELD_NAMES`), custom fields from the
+     baseline/current rows -- no hardcoded field names. None/blank/whitespace are equal (not a change).
+  5. UI highlighting: `/setups`, `/setups/table` and every post-action table re-render pass `changed_fields`; each changed
+     cell (fixed or custom, one or many) gets `rms-cell-changed` (CSS in styles.css) plus a "Changed from original" tooltip.
+     Added SSD and HDD columns to the table (they were not displayed at all, so a swapped SSD/HDD was invisible); column
+     filter indices shifted accordingly.
+  6. Swap dialog opens from a selected SETUP (`/setups/swap-dialog?setup_id=`; `reservation_id` still accepted as a legacy
+     alias) and now lists only setups the user can access, includes custom columns, and has start/end time, announcement
+     channels and message. `POST /setups/swap` passes them through. Swap button enables for exactly one selected row.
+
+FILES_CREATED:
+  - alembic/versions/0013_custom_field_baselines.py
+  - app/models/setup_custom_field_baseline.py
+  - app/models/baseline_capture.py
+  - app/repositories/interfaces/i_hardware_baseline_repository.py
+  - app/repositories/sqlalchemy/hardware_baseline_repository.py
+  - app/services/hardware_state_service.py
+  - tests/test_phase4_completion.py (15 new tests)
+
+FILES_MODIFIED:
+  - app/models/__init__.py, app/models/setup_hardware_baseline.py (BASELINE_FIELD_NAMES)
+  - app/services/swap_service.py (access rule, reservation decoupling, baseline safety net, custom ledger, can_access_setup)
+  - app/repositories/sqlalchemy/setup_repository.py + interface (get_active_grant_group_ids; delete cleans baselines)
+  - app/api/deps.py (HardwareBaselineRepository / HardwareStateService providers; injected into SwapService)
+  - app/web/routers/setups_view.py, templates/setups/_table_body.html, swap_dialog.html, table.html, static/js/table.js, static/css/styles.css
+  - Tests updated ONLY where the new model genuinely changes behaviour: tests/unit/models/test_phase1_data_model.py (2 baseline tests:
+    baseline now auto-captured), tests/test_backend.py (swap-by-other-user test now group-based + 1 new), tests/test_frontend.py
+    (unreserve dialog no longer reports pending swaps; +1 setup_id swap-dialog test). All other existing tests untouched.
+
+DATABASE_CHANGES:
+  - Migration 0013 (head): creates `setup_custom_field_baselines` (unique setup+column); backfills it from current
+    `setup_custom_field_values`; backfills `setup_hardware_baseline` for any setup that has none. Additive.
+    Limitation: backfilled baselines equal values AT MIGRATION TIME (earlier history cannot be recovered).
+
+API_CHANGES:
+  - `POST /api/v1/swaps`: no reservation needed; 403 if requester lacks group access to either setup; `reservation_id` in the response is null for new swaps.
+  - Web: `/setups/swap-dialog` takes `setup_id`; `/setups/swap` accepts start_time, end_time, announcement_channels, announcement_message.
+
+UI_CHANGES: SSD/HDD columns; changed-cell highlight; setup-based Swap dialog with time + announcement fields.
+
+MIGRATION_STATUS: Alembic head = 0013. NOT executed against a real DB (no network/SQLAlchemy in this sandbox). The migration's SQL was
+  validated in a raw-sqlite3 simulation (existing baseline preserved, missing ones filled, custom values copied).
+
+TEST_STATUS: pytest could NOT be run here (SQLAlchemy/FastAPI not installable -- no network). Performed instead: full-tree
+  compileall (clean); Jinja parse + render of the table/dialog templates with fake data (exactly the changed cells highlighted,
+  none when nothing changed, header/body column counts match); raw-sqlite3 migration simulation. ACTION REQUIRED: run
+  `alembic upgrade head` and `pytest tests/ -v` in a real environment. Pay particular attention to the mapper-event baseline
+  hooks (`baseline_capture.py`) and the 15 tests in tests/test_phase4_completion.py.
+
+KNOWN_ISSUES / OUTSTANDING:
+  - Table checkbox is only enabled for AVAILABLE setups or your own reservation (existing tested Reservation rule), so from the UI
+    you cannot start a Swap from a setup reserved by someone else. The API has no such limit. Proper Swap/Reserve/Borrow UI
+    separation belongs to Phase 5.
+  - The Setup Edit form changes CURRENT values too, so an admin edit after creation is highlighted as "changed from original"
+    (consistent with 'compare Original vs Current'; say if admin corrections should reset the baseline instead).
+  - A setup with swap history / reservations cannot be deleted (pre-existing FK behaviour, unchanged).
+  - Swap dialog offers same-product candidates only; cross-product swaps remain API-only.
+  - `SwapRequest.setup_id` and `app/core/exceptions.py:SwapMappingValidationError` remain unused legacy artefacts.
+  - No automatic PENDING->EXPIRED sweep (Future Enhancement, unchanged).
+  - BorrowService still not implemented (later phase).
+
+DECISIONS_REQUIRED_FROM_USER:
+  - Should admin edits via Setup Edit count as "changed from original" (current behaviour) or re-baseline?
+  - Phase 5 scope: confirm it is the Frontend phase (separate Reserve / Swap / Borrow / Return UI) and whether Borrow service
+    should come before it (prompt.md orders Borrow as Phase 4 and Frontend as Phase 5).
+
+NEXT_ACTION: Await your approval and the answers above. Do not start Phase 5 until then.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
 CURRENT_PHASE: Re-verification pass against consolidated Phase 1/2/3 requirements (complete) — see VERIFICATION_REPORT below. Next substantive phase is Borrow (my Phase 4).
 
 VERIFICATION_REPORT:

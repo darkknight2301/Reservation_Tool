@@ -11,6 +11,9 @@ class ISetupRepository(Protocol):
     def get_by_id(self, setup_id: int) -> Optional[Setup]:
         ...
 
+    def get_active_grant_group_ids(self, setup_id: int) -> List[int]:
+        ...
+
     def get_by_ip_or_hostname(self, ip_address: str, hostname: str) -> Optional[Setup]:
         ...
 

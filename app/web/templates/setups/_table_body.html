@@ -11,6 +11,8 @@
                 <th>User</th>
                 <th>Form Factor</th>
                 <th>Capacity</th>
+                <th>SSD</th>
+                <th>HDD</th>
                 <th>Aardvark</th>
                 <th>Quarch</th>
                 <th>APC</th>
@@ -41,22 +43,25 @@
                 <th></th>
                 <th></th>
                 <th></th>
-                <th><input type="text" class="form-control rms-column-filter" data-column="12" placeholder="Filter"></th>
+                <th></th>
                 <th></th>
                 <th><input type="text" class="form-control rms-column-filter" data-column="14" placeholder="Filter"></th>
-                <th><input type="text" class="form-control rms-column-filter" data-column="15" placeholder="Filter"></th>
+                <th></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="16" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="17" placeholder="Filter"></th>
                 <th></th>
                 <th></th>
                 {% for col in custom_columns %}
                 <th></th>
                 {% endfor %}
                 <th></th>
-                <th><input type="text" class="form-control rms-column-filter" data-column="{{ 19 + custom_columns|length }}" placeholder="Filter"></th>
+                <th><input type="text" class="form-control rms-column-filter" data-column="{{ 21 + custom_columns|length }}" placeholder="Filter"></th>
                 <th></th>
             </tr>
         </thead>
         <tbody id="setupsTableBody">
             {% for row in rows %}
+            {% set changed = changed_fields.get(row.setup.id, []) if changed_fields is defined and changed_fields else [] %}
             <tr data-setup-id="{{ row.setup.id }}"
                 data-status="{{ row.setup.status }}"
                 data-mine="{{ 'true' if row.is_mine else 'false' }}"
@@ -70,20 +75,22 @@
                 <td>{{ row.setup.ip_address }}</td>
                 <td>{{ row.setup.hostname }}</td>
                 <td>{{ row.reservation.user.full_name if row.reservation else "—" }}</td>
-                <td>{{ row.setup.form_factor or "—" }}</td>
-                <td>{{ row.setup.capacity or "—" }}</td>
-                <td>{{ row.setup.aardvark or "—" }}</td>
-                <td>{{ row.setup.quarch or "—" }}</td>
-                <td>{{ row.setup.apc or "—" }}</td>
-                <td>{{ row.setup.remote_server or "—" }}</td>
-                <td class="rms-truncate" title="{{ row.setup.hardware_info or '' }}">{{ row.setup.hardware_info or "—" }}</td>
-                <td>{{ row.setup.adapter or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'form_factor' in changed }}"{{ ' title="Changed from original"'|safe if 'form_factor' in changed }}>{{ row.setup.form_factor or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'capacity' in changed }}"{{ ' title="Changed from original"'|safe if 'capacity' in changed }}>{{ row.setup.capacity or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'ssd' in changed }}"{{ ' title="Changed from original"'|safe if 'ssd' in changed }}>{{ row.setup.ssd or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'hdd' in changed }}"{{ ' title="Changed from original"'|safe if 'hdd' in changed }}>{{ row.setup.hdd or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'aardvark' in changed }}"{{ ' title="Changed from original"'|safe if 'aardvark' in changed }}>{{ row.setup.aardvark or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'quarch' in changed }}"{{ ' title="Changed from original"'|safe if 'quarch' in changed }}>{{ row.setup.quarch or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'apc' in changed }}"{{ ' title="Changed from original"'|safe if 'apc' in changed }}>{{ row.setup.apc or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'remote_server' in changed }}"{{ ' title="Changed from original"'|safe if 'remote_server' in changed }}>{{ row.setup.remote_server or "—" }}</td>
+                <td class="rms-truncate {{ 'rms-cell-changed' if 'hardware_info' in changed }}" title="{{ row.setup.hardware_info or '' }}">{{ row.setup.hardware_info or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if 'adapter' in changed }}"{{ ' title="Changed from original"'|safe if 'adapter' in changed }}>{{ row.setup.adapter or "—" }}</td>
                 <td>{{ row.setup.owner.full_name if row.setup.owner else "—" }}</td>
                 <td>{{ row.setup.location }}</td>
                 <td>{{ row.setup.group.name if row.setup.group else "—" }}</td>
                 <td>{{ row.setup.product.name if row.setup.product else "—" }}</td>
                 {% for col in custom_columns %}
-                <td>{{ row.custom_values.get(col.name) or "—" }}</td>
+                <td class="{{ 'rms-cell-changed' if col.name in changed }}"{{ ' title="Changed from original"'|safe if col.name in changed }}>{{ row.custom_values.get(col.name) or "—" }}</td>
                 {% endfor %}
                 <td>
                     {% if row.reservation %}
@@ -101,7 +108,7 @@
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="{{ 21 + custom_columns|length }}" class="text-center text-muted py-4">No setups match the current filters.</td></tr>
+            <tr><td colspan="{{ 23 + custom_columns|length }}" class="text-center text-muted py-4">No setups match the current filters.</td></tr>
             {% endfor %}
         </tbody>
     </table>

@@ -475,18 +475,45 @@ def test_swap_to_unavailable_setup_rejected(client, auth_headers, developer_user
     assert response.status_code == 409
 
 
-def test_swap_other_users_reservation_rejected(client, auth_headers, developer_user, second_developer_user, make_setup, product):
-    dev_headers = auth_headers(developer_user)
-    setup_a = make_setup(product_id=product.id)
-    setup_b = make_setup(product_id=product.id)
-    reservation = _make_active_reservation(client, dev_headers, setup_a.id)
+def test_swap_by_user_outside_the_setups_group_rejected(client, auth_headers, make_user, make_setup, product, db_session):
+    """Swap is authorised by setup/group access, not by reservation ownership."""
+    from app.models.group import Group
+
+    own_group = Group(name="swap-own-group", description="d")
+    other_group = Group(name="swap-other-group", description="d")
+    db_session.add_all([own_group, other_group])
+    db_session.commit()
+
+    setup_a = make_setup(product_id=product.id, group_id=own_group.id)
+    setup_b = make_setup(product_id=product.id, group_id=own_group.id)
+    outsider = make_user(role_name=RoleName.DEVELOPER, group_id=other_group.id)
 
     response = client.post(
         "{0}/swaps".format(API),
         json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id},
-        headers=auth_headers(second_developer_user),
+        headers=auth_headers(outsider),
     )
     assert response.status_code == 403
+
+
+def test_swap_allowed_for_group_member_without_any_reservation(client, auth_headers, make_user, make_setup, product, db_session):
+    from app.models.group import Group
+
+    group = Group(name="swap-member-group", description="d")
+    db_session.add(group)
+    db_session.commit()
+
+    setup_a = make_setup(product_id=product.id, group_id=group.id)
+    setup_b = make_setup(product_id=product.id, group_id=group.id)
+    member = make_user(role_name=RoleName.DEVELOPER, group_id=group.id)
+
+    response = client.post(
+        "{0}/swaps".format(API),
+        json={"current_setup_id": setup_a.id, "requested_setup_id": setup_b.id, "column_names": ["ssd"]},
+        headers=auth_headers(member),
+    )
+    assert response.status_code == 201
+    assert response.json()["reservation_id"] is None
 
 
 # ---------------------------------------------------------------------

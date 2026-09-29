@@ -149,3 +149,10 @@ body.rms-loading .rms-overlay-spinner {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Cell whose CURRENT hardware value differs from its ORIGINAL/BASELINE value (generic -- applied per changed field, never per specific field). */
+td.rms-cell-changed {
+    background-color: #fff3cd !important;
+    box-shadow: inset 3px 0 0 #fd7e14;
+    font-weight: 600;
+}

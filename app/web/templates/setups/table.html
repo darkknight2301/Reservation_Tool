@@ -14,7 +14,7 @@
         </button>
         <button id="swapActionBtn" class="btn btn-warning btn-sm" disabled
                 hx-get="/setups/swap-dialog" hx-target="#dialogContainer" hx-swap="innerHTML"
-                hx-vals="js:{reservation_id: document.getElementById('swapActionBtn').getAttribute('data-reservation-ids')}">
+                hx-vals="js:{setup_id: document.getElementById('swapActionBtn').getAttribute('data-current-setup-id')}">
             <i class="bi bi-arrow-left-right me-1"></i>Swap
         </button>
         <button id="unreserveActionBtn" class="btn btn-danger btn-sm" disabled

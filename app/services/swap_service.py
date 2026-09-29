@@ -6,6 +6,10 @@ between two setups (business rule 5: both setups must contain the selected
 column/hardware field). Redesigned in Phase 3 -- see
 ARCHITECTURE_ASSESSMENT.md section 3.2 and IMPLEMENTATION_PROGRESS.md:
 
+  * A Swap is fully independent of Reservation: it neither requires the
+    requester (or anyone) to hold a reservation, nor stores/reads one.
+    Who may raise a Swap is decided by setup/group ACCESS (see
+    ``_assert_has_setup_access``), not by reservation state.
   * A Swap NEVER relocates, creates, or otherwise touches any Reservation,
     and NEVER changes a Setup's ``status``. It only ever changes the
     CURRENT/EFFECTIVE hardware field value(s) on the two Setup rows
@@ -44,7 +48,6 @@ from app.core.constants import (
 )
 from app.core.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationAppError
 from app.models.hardware_change_log import HardwareChangeLog
-from app.models.reservation import Reservation
 from app.models.swap_request import SwapRequest
 from app.models.user import User
 from app.repositories.interfaces.i_hardware_change_log_repository import IHardwareChangeLogRepository
@@ -54,6 +57,7 @@ from app.repositories.interfaces.i_swap_repository import ISwapRepository
 from app.schemas.swap_request import SwapCreateRequest, SwapDecisionRequest, SwapFilter
 from app.services.approval_routing_service import ApprovalRoutingService
 from app.services.audit_service import AuditService
+from app.services.hardware_state_service import HardwareStateService
 from app.services.notification_service import NotificationService
 from app.services.template_service import TemplateService
 
@@ -107,6 +111,7 @@ class SwapService:
         approval_routing_service: Optional[ApprovalRoutingService] = None,
         template_service: Optional[TemplateService] = None,
         notification_service: Optional[NotificationService] = None,
+        hardware_state_service: Optional[HardwareStateService] = None,
     ) -> None:
         self._swap_repository = swap_repository
         self._reservation_repository = reservation_repository
@@ -116,6 +121,7 @@ class SwapService:
         self._approval_routing_service = approval_routing_service
         self._template_service = template_service
         self._notification_service = notification_service
+        self._hardware_state_service = hardware_state_service
 
     def get_by_id(self, swap_id: int) -> SwapRequest:
         swap = self._swap_repository.get_by_id(swap_id)
@@ -134,8 +140,44 @@ class SwapService:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _active_reservation_for_setup(self, setup_id: int) -> Optional[Reservation]:
-        return self._reservation_repository.get_active_by_setup_id(setup_id)
+    @staticmethod
+    def _user_group_ids(user: User) -> set:
+        ids = set()
+        if user.group_id:
+            ids.add(user.group_id)
+        ids.update(group.id for group in (user.groups or []))
+        return ids
+
+    def can_access_setup(self, setup, user: User) -> bool:
+        """True if ``user`` passes the Swap group/setup access rule for ``setup`` (used by the UI to list eligible setups)."""
+        try:
+            self._assert_has_setup_access(setup, user)
+        except AuthorizationError:
+            return False
+        return True
+
+    def _assert_has_setup_access(self, setup, user: User) -> None:
+        """
+        Group/setup access rule for raising a Swap (independent of any
+        Reservation): the requester must belong to the group that
+        currently holds the setup -- its owning ``group_id`` or a group
+        holding active borrowed access. OWNER may always act. A setup with
+        no group at all is unrestricted (nothing to be a member of). This
+        is deliberately NOT hierarchy-based: the approval hierarchy only
+        routes approvals and never widens who may raise a request.
+        """
+        if user.role and user.role.name in _UNIVERSAL_APPROVER_ROLES:
+            return
+        holding_groups = set()
+        if setup.group_id:
+            holding_groups.add(setup.group_id)
+        holding_groups.update(self._setup_repository.get_active_grant_group_ids(setup.id))
+        if not holding_groups:
+            return
+        if not (holding_groups & self._user_group_ids(user)):
+            raise AuthorizationError(
+                "You may only request a swap for setups belonging to your group ({0} is not).".format(setup.hostname)
+            )
 
     def _common_swappable_columns(self, setup_a, setup_b) -> List[str]:
         """
@@ -205,15 +247,10 @@ class SwapService:
             if setup.status in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED):
                 raise ConflictError("Setup {0} is currently {1} and cannot be part of a swap.".format(setup.hostname, setup.status.lower()))
 
-        # Ownership precondition: the requester must currently be the one
-        # using the setup whose hardware they're proposing to change. This
-        # is an access/ownership rule (business rule 8), not a structural
-        # dependency -- Swap does not require this reservation to remain
-        # active for the request to be approved later (see approve()), it
-        # only requires it to exist *right now*, to identify who may ask.
-        active_reservation = self._active_reservation_for_setup(current_setup.id)
-        if active_reservation is None or active_reservation.user_id != acting_user.id:
-            raise AuthorizationError("You may only request a swap for a setup you currently have an ACTIVE reservation on.")
+        # Access precondition (group/setup access -- NOT reservation state):
+        # the requester must have access to BOTH setups being exchanged.
+        self._assert_has_setup_access(current_setup, acting_user)
+        self._assert_has_setup_access(requested_setup, acting_user)
 
         allowed_columns = self._common_swappable_columns(current_setup, requested_setup)
 
@@ -236,7 +273,6 @@ class SwapService:
         routed_emails = self._resolve_approver_emails(current_setup.group_id)
 
         swap = SwapRequest(
-            reservation_id=active_reservation.id,  # informational only (see model docstring) -- never used to gate approval
             requester_id=acting_user.id,
             current_setup_id=current_setup.id,
             requested_setup_id=requested_setup.id,
@@ -300,8 +336,17 @@ class SwapService:
 
         template_values_a: Optional[Dict] = None
         template_values_b: Optional[Dict] = None
+        custom_ids_a: Optional[Dict[str, int]] = None
+        custom_ids_b: Optional[Dict[str, int]] = None
         old_values: Dict[str, object] = {}
         new_values: Dict[str, object] = {}
+
+        # ORIGINAL/BASELINE safety net: a setup that (as a legacy row) has no
+        # baseline yet gets one captured from its pre-swap values, so the
+        # original state is never lost to this change.
+        if self._hardware_state_service is not None and any(name in SWAPPABLE_SETUP_FIELDS for name in column_names):
+            self._hardware_state_service.ensure_fixed_baseline(current_setup)
+            self._hardware_state_service.ensure_fixed_baseline(requested_setup)
 
         for column_name in column_names:
             if column_name in SWAPPABLE_SETUP_FIELDS:
@@ -319,6 +364,15 @@ class SwapService:
                     )
                 old_value = template_values_a.get(column_name)
                 value_b = template_values_b.get(column_name)
+                if self._hardware_state_service is not None:
+                    if custom_ids_a is None:
+                        custom_ids_a = {c.name: c.id for c in self._template_service.get_custom_columns(current_setup.product_id)}
+                        custom_ids_b = {c.name: c.id for c in self._template_service.get_custom_columns(requested_setup.product_id)}
+                    # Capture each side's ORIGINAL custom value before it is overwritten.
+                    if column_name in custom_ids_a:
+                        self._hardware_state_service.ensure_custom_baseline(current_setup.id, custom_ids_a[column_name], old_value)
+                    if column_name in custom_ids_b:
+                        self._hardware_state_service.ensure_custom_baseline(requested_setup.id, custom_ids_b[column_name], value_b)
                 self._template_service.set_setup_values(
                     current_setup.id, current_setup.product_id, {column_name: value_b}, acting_user
                 )
@@ -352,13 +406,11 @@ class SwapService:
 
         # Append-only, per-field hardware change ledger (Phase 1) -- feeds
         # the Setup Table's "only changed cells highlighted" UI requirement.
-        # Only the fixed hardware fields are logged here (SWAPPABLE_SETUP_FIELDS);
-        # custom template-column history is tracked by TemplateService itself.
+        # Fixed hardware fields AND custom template columns are both logged,
+        # so every changed field has a traceable history back to its baseline.
         if self._hardware_change_log_repository is not None:
             ledger_rows = []
             for column_name in column_names:
-                if column_name not in SWAPPABLE_SETUP_FIELDS:
-                    continue
                 ledger_rows.append(HardwareChangeLog(
                     setup_id=current_setup.id, field_name=column_name,
                     old_value=None if old_values[column_name] is None else str(old_values[column_name]),
