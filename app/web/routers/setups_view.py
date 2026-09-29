@@ -29,6 +29,7 @@ from app.core.constants import AnnouncementChannel, PermissionCode, ReservationS
 from app.core.exceptions import AppError, NotFoundError
 from app.models.reservation import Reservation
 from app.models.user import User
+from app.models.setup_hardware_baseline import BASELINE_FIELD_NAMES
 from app.schemas.reservation import ReservationCreateRequest, ReservationFilter
 from app.schemas.setup import SetupFilter, SetupUpdateRequest
 from app.schemas.swap_request import SwapCreateRequest
@@ -54,11 +55,13 @@ def _build_rows(
     current_user: User,
     reservation_service: ReservationService,
     custom_values_by_setup: Optional[Dict[int, Dict]] = None,
+    grants_by_setup: Optional[Dict[int, object]] = None,
 ) -> List[Dict]:
     """Join a page of Setups against active Reservations to build display rows."""
     active_reservations: List[Reservation] = reservation_service.list_all(ReservationFilter(status=ReservationStatus.ACTIVE))
     reservation_by_setup_id = {r.setup_id: r for r in active_reservations}
     custom_values_by_setup = custom_values_by_setup or {}
+    grants_by_setup = grants_by_setup or {}
 
     rows = []
     for setup in setups:
@@ -71,6 +74,7 @@ def _build_rows(
                 "is_mine": is_mine,
                 "checkbox_enabled": setup.status == SetupStatus.AVAILABLE or is_mine,
                 "custom_values": custom_values_by_setup.get(setup.id, {}),
+                "borrowed_by_group": grants_by_setup[setup.id].granted_to_group if setup.id in grants_by_setup else None,
             }
         )
     return rows
@@ -106,7 +110,8 @@ def _load_table_context(
                 [s.id for s in setups], filters.product_id
             )
 
-    rows = _build_rows(setups, current_user, reservation_service, custom_values_by_setup)
+    grants_by_setup = setup_service.get_active_grants([s.id for s in setups])
+    rows = _build_rows(setups, current_user, reservation_service, custom_values_by_setup, grants_by_setup)
     context = base_context(request, current_user)
     context.update(
         {
@@ -254,6 +259,18 @@ def reserve_submit(
     return response
 
 
+def _swap_candidates(current_setup, current_user, setup_service, swap_service):
+    """Every other setup the user can access (any product) that shares at least one swappable column with ``current_setup``."""
+    setups, _ = setup_service.list(SetupFilter(), page=1, page_size=500)
+    return [
+        s for s in setups
+        if s.id != current_setup.id
+        and s.status not in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED)
+        and swap_service.can_access_setup(s, current_user)
+        and swap_service.swappable_columns(current_setup, s)
+    ]
+
+
 @router.get("/setups/swap-dialog")
 def swap_dialog(
     request: Request,
@@ -266,11 +283,11 @@ def swap_dialog(
     template_service: TemplateService = Depends(get_template_service),
 ):
     """
-    Render the Swap dialog for one setup: pick another setup to exchange
-    column(s) with. Swap is independent of Reservation, so the dialog is
-    opened from a *setup* (``setup_id``); ``reservation_id`` is only
-    accepted as a legacy way to identify the same setup. Only setups the
-    user has group/setup access to are offered.
+    Render the Swap dialog for one setup. Swap is independent of Reservation,
+    so it opens from a *setup* (``reservation_id`` is only a legacy alias).
+    Only setups the user can access AND that share at least one swappable
+    column with this setup are offered; the column list then follows the
+    chosen partner (see ``/setups/swap-dialog/columns``).
     """
     if setup_id is None and reservation_id is not None:
         setup_id = reservation_service.get_by_id(reservation_id).setup_id
@@ -278,23 +295,73 @@ def swap_dialog(
         raise NotFoundError("A setup must be selected to raise a swap.")
     current_setup = setup_service.get_by_id(setup_id)
 
-    candidate_setups, _ = setup_service.list(SetupFilter(product_id=current_setup.product_id), page=1, page_size=200)
-    candidate_setups = [
-        s for s in candidate_setups
-        if s.id != current_setup.id
-        and s.status not in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED)
-        and swap_service.can_access_setup(s, current_user)
-    ]
-    custom_column_names = [c.name for c in template_service.get_custom_columns(current_setup.product_id)]
-
+    candidates = _swap_candidates(current_setup, current_user, setup_service, swap_service)
+    first = candidates[0] if candidates else None
     context = base_context(request, current_user)
     context.update({
-        "current_setup": current_setup, "candidate_setups": candidate_setups,
-        "swappable_columns": list(SWAPPABLE_SETUP_FIELDS) + custom_column_names,
+        "current_setup": current_setup, "candidate_setups": candidates,
+        "column_options": _swap_column_options(current_setup, first, swap_service, template_service),
         "announcement_channels": AnnouncementChannel.ALL,
         "can_raise": swap_service.can_access_setup(current_setup, current_user),
     })
     return templates.TemplateResponse("setups/swap_dialog.html", context)
+
+
+def _swap_column_options(current_setup, other_setup, swap_service, template_service) -> list:
+    """
+    Every column that exists on EITHER setup, flagged ``enabled`` only if it
+    exists on BOTH (i.e. can really be swapped). Disabled ones stay visible
+    with the reason so the user understands why they cannot be picked.
+    """
+    if other_setup is None:
+        return []
+    valid = set(swap_service.swappable_columns(current_setup, other_setup))
+    names = list(SWAPPABLE_SETUP_FIELDS)
+    for setup in (current_setup, other_setup):
+        for column in template_service.get_custom_columns(setup.product_id):
+            if column.name not in names:
+                names.append(column.name)
+    return [{"name": n, "label": n.replace("_", " ").title(), "enabled": n in valid} for n in names]
+
+
+@router.get("/setups/swap-dialog/columns")
+def swap_dialog_columns(
+    request: Request,
+    current_setup_id: int,
+    requested_setup_id: Optional[int] = None,
+    current_user: User = Depends(require_web_permission(PermissionCode.SWAP_REQUEST)),
+    setup_service: SetupService = Depends(get_setup_service),
+    swap_service: SwapService = Depends(get_swap_service),
+    template_service: TemplateService = Depends(get_template_service),
+):
+    """HTMX partial: the column picker for the chosen swap partner -- only columns present on both setups are selectable."""
+    current_setup = setup_service.get_by_id(current_setup_id)
+    other = setup_service.get_by_id(requested_setup_id) if requested_setup_id else None
+    context = base_context(request, current_user)
+    context.update({"column_options": _swap_column_options(current_setup, other, swap_service, template_service)})
+    return templates.TemplateResponse("setups/_swap_columns.html", context)
+
+
+@router.get("/setups/{setup_id}/hardware-compare")
+def hardware_compare_dialog(
+    request: Request,
+    setup_id: int,
+    current_user: User = Depends(get_current_web_user),
+    setup_service: SetupService = Depends(get_setup_service),
+    template_service: TemplateService = Depends(get_template_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
+):
+    """Original (baseline) vs Current (effective) hardware for one setup, plus its hardware change history."""
+    setup = setup_service.get_by_id(setup_id)
+    rows = hardware_state_service.compare(setup, template_service.get_custom_columns(setup.product_id))
+    grant = setup_service.get_active_grants([setup.id]).get(setup.id)
+    context = base_context(request, current_user)
+    context.update({
+        "setup": setup, "rows": rows, "changed_count": sum(1 for r in rows if r["changed"]),
+        "history": hardware_state_service.history(setup.id),
+        "borrowed_by_group": grant.granted_to_group if grant else None,
+    })
+    return templates.TemplateResponse("setups/hardware_compare.html", context)
 
 
 @router.post("/setups/swap")
@@ -464,6 +531,9 @@ async def setup_edit_save(
     message, message_type = "Setup updated successfully.", "success"
     try:
         setup = setup_service.get_by_id(setup_id)
+        # Snapshot CURRENT values so fields the admin edits can be re-baselined afterwards.
+        before_fixed = {name: getattr(setup, name, None) for name in BASELINE_FIELD_NAMES}
+        before_custom = template_service.get_values_map_for_setup(setup.id, setup.product_id)
         payload = SetupUpdateRequest(
             group_id=int(form["group_id"]) if form.get("group_id") else None,
             owner_id=int(form["owner_id"]) if form.get("owner_id") else None,
@@ -497,6 +567,14 @@ async def setup_edit_save(
                         raw_values[column.name] = form.get(field_name)
             if raw_values:
                 template_service.set_setup_values(setup_id, setup.product_id, raw_values, current_user)
+
+        # Setup Edit is an admin correction: whatever the admin actually changed
+        # becomes the new ORIGINAL value (fields not edited keep their baseline).
+        hardware_state_service.rebaseline_edited_fields(
+            setup, before_fixed,
+            {c.name: c.id for c in custom_columns}, before_custom,
+            template_service.get_values_map_for_setup(setup_id, setup.product_id),
+        )
     except AppError as exc:
         message, message_type = exc.message, "error"
     except ValidationError as exc:

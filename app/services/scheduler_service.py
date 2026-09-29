@@ -52,6 +52,27 @@ def _run_reservation_sweep() -> None:
         db.close()
 
 
+def _run_borrow_sweep() -> None:
+    """Job: expire PENDING borrow requests whose requested window ended before anyone decided."""
+    from app.repositories.sqlalchemy.borrow_repository import BorrowRepository
+    from app.services.borrow_service import BorrowService
+
+    db = SessionLocal()
+    try:
+        service = BorrowService(
+            BorrowRepository(db), SetupRepository(db), UserRepository(db), AuditService(AuditLogRepository(db)),
+        )
+        swept = service.expire_stale_pending(utc_now())
+        db.commit()
+        if swept:
+            logger.info("Borrow expiry sweep completed.", extra={"swept_count": swept})
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Borrow expiry sweep failed.")
+    finally:
+        db.close()
+
+
 def _run_announcement_sweep() -> None:
     """Job: deactivate announcements past their end_date."""
     db = SessionLocal()
@@ -76,6 +97,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_reservation_sweep, "interval", minutes=settings.RESERVATION_SWEEP_INTERVAL_MINUTES,
         id="reservation_sweep", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _run_borrow_sweep, "interval", minutes=settings.RESERVATION_SWEEP_INTERVAL_MINUTES,
+        id="borrow_sweep", replace_existing=True,
     )
     _scheduler.add_job(
         _run_announcement_sweep, "interval", minutes=settings.ANNOUNCEMENT_SWEEP_INTERVAL_MINUTES,

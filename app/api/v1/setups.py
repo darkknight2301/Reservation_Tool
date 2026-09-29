@@ -3,12 +3,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_setup_service, get_template_service, require_permission
+from app.api.deps import get_hardware_state_service, get_setup_service, get_template_service, require_permission
 from app.core.constants import PermissionCode
+from app.models.setup_hardware_baseline import BASELINE_FIELD_NAMES
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.setup import SetupCreateRequest, SetupFilter, SetupResponse, SetupUpdateRequest
 from app.schemas.template import SetupCustomFieldsResponse, SetupCustomFieldsUpdateRequest
+from app.services.hardware_state_service import HardwareStateService
 from app.services.setup_service import SetupService
 from app.services.template_service import TemplateService
 from app.utils.pagination import total_pages
@@ -65,9 +67,20 @@ def update_setup(
     payload: SetupUpdateRequest,
     current_user: User = Depends(require_permission(PermissionCode.PRODUCT_MANAGE)),
     setup_service: SetupService = Depends(get_setup_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
 ):
-    """Update a Setup, including status transitions. Requires ``product:manage``."""
-    return setup_service.update(setup_id, payload, current_user)
+    """
+    Update a Setup, including status transitions. Requires ``product:manage``.
+
+    Like the Setup Edit screen, an admin edit is a correction: any fixed
+    hardware field whose value this call actually changes becomes the new
+    ORIGINAL (baseline) value; untouched fields keep theirs.
+    """
+    setup = setup_service.get_by_id(setup_id)
+    before_fixed = {name: getattr(setup, name, None) for name in BASELINE_FIELD_NAMES}
+    updated = setup_service.update(setup_id, payload, current_user)
+    hardware_state_service.rebaseline_edited_fields(updated, before_fixed, {}, {}, {})
+    return updated
 
 
 @router.delete("/{setup_id}", response_model=MessageResponse)

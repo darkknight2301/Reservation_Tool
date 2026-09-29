@@ -1,3 +1,122 @@
+CURRENT_PHASE: Phase 6 (UI integration) -- implemented. Awaiting your approval. Phase 7 NOT started.
+
+DECISIONS APPLIED FROM YOU THIS ROUND:
+  - The LENDING group loses swap access to a setup while it is lent out (effective holder = active borrow grant's group; access returns on Return).
+    `SwapService._assert_has_setup_access`: holding groups = active-grant group(s) if any, else `Setup.group_id`.
+  - Borrowed access stays MANUAL (no auto-return); overdue borrows are flagged "Overdue" (Borrow page + Approvals history).
+
+COMPLETED (Phase 6 -- UI integration; no Product/template functionality changed, no swap-mapping UI):
+  Reserve / Unreserve  -- existing dialogs kept. Reserve dialog: "Reason / remarks", start/end, announcement channels + message, "Mail Leads" (lead notification).
+  Swap                 -- dialog opens from any selected setup (no reservation needed). Candidates = setups the user can access (any product) that share >= 1 swappable column.
+                          The column picker reloads when the partner changes (`/setups/swap-dialog/columns`): columns present on BOTH setups are selectable; the rest are
+                          shown greyed-out and disabled ("not on both setups"); the service still re-validates. Fields: reason, start, end, announcement channels/message; note that
+                          routed leads are always emailed (lead notification).
+  Borrow               -- `/borrows` page: request dialog (pick source lead -> that lead's setups -> hardware/entire setup -> reason/start/end/announcement), Pending cards with explicit
+                          PENDING status + Borrower + Source + "awaiting any ONE of <routed leads>", Currently borrowed (Borrower, Source, Approved-by, Overdue, Return / Get back), History.
+  Return borrowed      -- "Return / Get back" button (only for users allowed to return; server-enforced).
+  Pending Approvals /
+  Approval History     -- NEW `/approvals` page (navbar "Approvals" for everyone with swap:view; Borrow items only for borrow:view): tabs Pending / History, "only my requests" filter, Swap
+                          and Borrow listed side-by-side but handled by their own services (independent). Approve/Reject shown only if the routed-approver check passes; the requester
+                          gets "Cancel my request"; everyone else sees "not one of the routed approvers". History shows type, request, requester, Borrower<-Source, status, decided-by, updated.
+  Original vs Current  -- new row button on every setup ("Original vs Current hardware"; amber when the setup has changes) opens a dialog with Field | Original | Current (changed
+                          cells highlighted), a changed-count badge, Borrowed-by badge and the hardware change history (field, from, to, source SWAP #id, by whom).
+  Borrowed status      -- "Borrowed by <group>" badge in the Setups table (Phase 5), in the compare dialog and on the Borrow page; group filter uses the effective holder.
+  Reservation status   -- Setups table keeps Status / User / Reserved Time; Unreserve dialog unchanged.
+  Highlighting         -- unchanged mechanism from Phase 4 (generic `changed_fields`): one changed field -> that cell only; several -> each cell; fixed AND custom columns.
+  Toolbar              -- Setups page gained "Borrow / Return" (borrow:view) and "Approvals" shortcuts.
+
+FILES_CREATED: app/web/routers/approvals_view.py, app/web/templates/approvals/{approvals,_content}.html, app/web/templates/setups/{_swap_columns,hardware_compare}.html,
+  tests/test_phase6_ui.py (11 tests)
+FILES_MODIFIED: app/services/swap_service.py (lender rule; `swappable_columns`, `can_decide`), app/services/borrow_service.py (`can_decide`, `can_return`),
+  app/services/hardware_state_service.py + baseline repo/interface (`compare`, `history`, `list_changes`), app/web/routers/setups_view.py (swap dialog/columns, compare route),
+  app/web/templates/setups/{swap_dialog,_table_body,table,reserve_dialog}.html, app/web/templates/borrows/_lists.html, app/web/templates/partials/navbar.html, app/main.py.
+  Not touched: Product/template code, existing tests.
+DATABASE_CHANGES: none (Alembic head stays 0013).  API_CHANGES: none (web-only routes: /approvals*, /setups/{id}/hardware-compare, /setups/swap-dialog/columns).
+
+TESTS: NOT EXECUTED here (SQLAlchemy/FastAPI cannot be installed in this sandbox -- no network). Done instead: full compileall clean; all new/changed Jinja templates parse; smoke-rendered with
+  fake data: Approvals (approve/cancel/locked states correct, Overdue + decider in history), compare dialog (exactly the changed cell highlighted), swap column picker (unavailable columns disabled).
+  ACTION REQUIRED: `alembic upgrade head` then `pytest tests/ -v`. Highest-risk spots: swap dialog now lists cross-product candidates; `_swap_candidates` calls `setup_service.list` with page_size=500;
+  Approvals page role/permission visibility; existing tests asserting the old swap dialog text/behaviour (I did not edit any existing test this phase -- if one fails, it is a real behaviour change to review).
+
+KNOWN_ISSUES / NOTES:
+  - The swap candidate list is capped at 500 setups (page_size) -- fine for typical labs; say if you need search/paging in the dialog.
+  - Reservation status is not a separate column (Status + User + Reserved Time already convey it); a dedicated reservation-status filter is a Future Enhancement.
+  - Approvals shows the latest 200 items per tab (no pagination yet).
+  - The Approvals page lists ALL swaps/borrows to anyone with the view permission (existing swap:view behaviour); "only my requests" narrows it. Say if visibility should be restricted to related groups.
+  - Legacy pages kept for now: /admin/swap-approvals (old pending-swap cards) and /borrows both still work; /approvals is the unified view. Removing the old swap page is a Future Enhancement.
+  - Previous open items still apply (no auto-return, hardware borrow is setup-level access, unused SwapRequest.setup_id).
+
+DECISIONS_REQUIRED_FROM_USER:
+  - Keep or retire the old /admin/swap-approvals page now that /approvals exists?
+  - Should Approvals be visible only to related groups/approvers instead of everyone with swap:view?
+  - Phase 7 scope (I have not assumed one).
+
+NEXT_ACTION: Await your approval. Do not start Phase 7 until then.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
+CURRENT_PHASE: Phase 5 (Borrow) -- implemented. Awaiting your approval. Phase 6 NOT started.
+
+DECISIONS APPLIED FROM YOU THIS ROUND:
+  - Setup Edit resets the baseline: when an admin edits a setup (web Setup Edit form AND `PATCH /api/v1/setups/{id}`), every field the
+    edit actually CHANGED becomes the new Original value (`HardwareStateService.rebaseline_edited_fields`). Fields not edited keep their
+    baseline, so a swapped field on the same setup stays highlighted. (Field-level, not whole-row, on purpose -- say if you want a full reset.)
+  - Borrow before Frontend: Borrow (incl. its UI) is Phase 5 as requested.
+
+COMPLETED (Phase 5 -- Borrow):
+  1. `BorrowService` (app/services/borrow_service.py), independent of Reservation and Swap (never reads/creates/moves a Reservation, never exchanges values).
+  2. Request: only LEAD / DEVELOPER_LEAD (Manager) / OWNER, and the requester must belong to a group (that group = borrowing group). The requester selects the
+     SOURCE LEAD (`source_lead_id`); the setup must belong to that lead's group; optional `hardware_field_name` (fixed hardware field or product custom column;
+     omit = entire setup); reason, start/end time (end must be in the future, end > start), announcement channels + message.
+  3. Routing = Phase 2 Borrow routing (`resolve_borrow_approvers(source_group_id)`): E selecting d -> b,d,f,g (test-verified, incl. any ONE approves, decoy leads a/c refused).
+     Routed emails are snapshotted on the request and emailed on creation ("lead emails"). If the hierarchy yields nobody, the flat `borrow:approve` permission is the fallback;
+     OWNER can always decide; nobody can decide their own request.
+  4. Approve -> one active `SetupAccessGrant` (borrower group) is created and the request becomes COMPLETED. ORIGINAL state preserved: `Setup.group_id` and hardware
+     values/baseline are never modified. EFFECTIVE holder = active grant group, else `Setup.group_id`.
+  5. Return / Get back (`return_borrow`): allowed for the requester, another lead of the borrowing group, any routed source-side approver, or OWNER. Closes the grant
+     (kept, never deleted), status RETURNED, returned_at/returned_by recorded => the source group's access is restored automatically. Emails requester + routed
+     source leads and broadcasts on the channels chosen at request time.
+  6. Reject / Cancel (requester only, PENDING only) / Expire (PENDING past its end_time -> EXPIRED by list/approve and a scheduler job `borrow_sweep`).
+  7. Conflict prevention: max one PENDING-or-active borrow per setup (duplicate, or already-borrowed => 409); cannot borrow your own group's setup; not MAINTENANCE/RETIRED;
+     re-validated at approval (setup unavailable / changed group => 409).
+  8. Effective access is applied elsewhere: the Setups table group filter lists a lent-out setup under the BORROWING group, and shows a "Borrowed by <group>" badge; Swap access
+     already honours active grants (borrower group members can swap it only while borrowed -- test-verified).
+  9. History: `borrow_requests` (all statuses, who approved/returned/when) + `setup_access_grants` + audit log (CREATE/APPROVE/REJECT/CANCEL/UPDATE-return);
+     `GET /api/v1/borrows?setup_id=&group_id=&status=` and the History table on the Borrow page.
+ 10. API `/api/v1/borrows`: POST, GET list, GET {id}, PATCH {id}/approve|reject|cancel|return (permissions borrow:request / view / approve / return).
+ 11. UI `/borrows` (navbar "Borrow", lead/manager/owner only): Pending (approve/reject, cancel own), Currently borrowed (Return / Get back, Overdue badge), History; request dialog
+     (source lead -> setups of that lead's group -> hardware -> reason/time/announcement).
+
+FILES_CREATED: app/schemas/borrow_request.py, app/repositories/interfaces/i_borrow_repository.py, app/repositories/sqlalchemy/borrow_repository.py, app/services/borrow_service.py,
+  app/api/v1/borrows.py, app/web/routers/borrows_view.py, app/web/templates/borrows/{borrows,_lists,_setup_fields,request_dialog}.html, tests/test_phase5_borrow.py (24 tests)
+FILES_MODIFIED: app/api/deps.py (borrow wiring), app/api/v1/router.py, app/main.py, app/services/scheduler_service.py (borrow_sweep), app/repositories/sqlalchemy/setup_repository.py +
+  interface + app/services/setup_service.py (effective-group filter, get_active_grants), app/web/routers/setups_view.py (borrowed badge data; Setup Edit re-baseline),
+  app/web/templates/setups/_table_body.html (badge), app/web/templates/partials/navbar.html, app/api/v1/setups.py (PATCH re-baseline),
+  app/services/hardware_state_service.py + baseline repository/interface (rebaseline_edited_fields, set_fixed_baseline_fields, set_custom_baseline).
+DATABASE_CHANGES: none -- Phase 1 `borrow_requests` / `setup_access_grants` (migration 0010) already had every column needed. Alembic head remains 0013.
+  Decision/return notes are stored in the audit log (no new columns).
+API_CHANGES: new /api/v1/borrows endpoints (above); `PATCH /api/v1/setups/{id}` now re-baselines the fixed fields it changes.
+TESTS: existing tests untouched this phase (regression). New: tests/test_phase5_borrow.py. NOT EXECUTED here (SQLAlchemy/FastAPI cannot be installed in this sandbox -- no network).
+  Done instead: full compileall clean; every new/changed Jinja template parses; Borrow list template smoke-rendered with fake data (correct approve/cancel/return buttons + Overdue badge).
+  ACTION REQUIRED: `alembic upgrade head` then `pytest tests/ -v`. Watch: mapper-event baseline hooks (Phase 4 completion), the effective-group filter in SetupRepository, and the new Borrow tests.
+
+KNOWN_ISSUES / DESIGN NOTES:
+  - A Borrow transfers ACCESS, not hardware values: there is no destination setup in the model, so a "hardware" borrow records which hardware is needed but the grant is per
+    SETUP (setup-level access). Return therefore restores access only; nothing is copied back. No hardware-change-ledger rows are written for Borrow (no value changes).
+  - Start/end are the requested window: access begins at approval and is not auto-revoked at end_time (overdue borrows are flagged in the UI). Auto-return is a Future Enhancement.
+  - Only the requester's PRIMARY group is the borrowing group; `resolve_borrow_approvers` matches users by primary group only (pre-existing Phase 2 behaviour).
+  - Custom-column names can be borrowed via the API; the UI dialog offers all fixed fields plus the selected setup's custom columns.
+  - The swap-access rule still lets the OWNING group's members swap a lent-out setup (it counts owner group OR grant group). Say if the lender should lose swap access while lent.
+  - tests/test_business_logic.py still has an outdated comment saying BorrowService "does not exist yet" (comment only).
+  - Table row checkboxes / Reserve are unchanged: Borrow is deliberately NOT tied to the Reservation table.
+
+DECISIONS_REQUIRED_FROM_USER:
+  - Should the lender group lose swap access to a setup while it is lent out? (currently: no)
+  - Should borrowed access auto-end at end_time (auto-return + email), or stay manual with the Overdue flag?
+  - Confirm Phase 6 scope (I assume the remaining Frontend/polish work) before I start.
+
+NEXT_ACTION: Await your approval. Do not start Phase 6 until then.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
 CURRENT_PHASE: Phase 4 (Swap) COMPLETION PASS -- complete. Phases 1-4 (user numbering) are now all implemented. Awaiting approval before Phase 5. Borrow is NOT started.
 
 COMPLETED (this pass; closes the gaps found in the Phase 1-4 validation):

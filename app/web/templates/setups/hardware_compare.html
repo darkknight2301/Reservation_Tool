@@ -1,0 +1,59 @@
+<div class="modal fade" id="compareModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-columns-gap me-2"></i>Original vs Current &mdash; {{ setup.hostname }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">
+                    <strong>Original</strong> is the hardware as first recorded (or last corrected in Setup Edit);
+                    <strong>Current</strong> is the effective hardware today.
+                    {% if changed_count %}<span class="badge bg-warning text-dark">{{ changed_count }} field{{ "s" if changed_count != 1 }} changed</span>
+                    {% else %}<span class="badge bg-success">No changes</span>{% endif %}
+                    {% if borrowed_by_group %}<span class="badge bg-info text-dark ms-1">Borrowed by {{ borrowed_by_group.name }}</span>{% endif %}
+                </p>
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Field</th><th>Original</th><th>Current</th></tr></thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr>
+                            <td>{{ r.label }}</td>
+                            <td>{{ r.original or "—" }}</td>
+                            <td class="{{ 'rms-cell-changed' if r.changed }}">{{ r.current or "—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <h6 class="mt-3"><i class="bi bi-clock-history me-1"></i>Change history</h6>
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th><th>Source</th><th>By</th></tr></thead>
+                    <tbody>
+                        {% for h in history %}
+                        <tr>
+                            <td>{{ h.created_at.strftime("%Y-%m-%d %H:%M") if h.created_at else "" }}</td>
+                            <td>{{ h.field_name|replace("_", " ")|title }}</td>
+                            <td>{{ h.old_value or "—" }}</td>
+                            <td>{{ h.new_value or "—" }}</td>
+                            <td><span class="badge bg-secondary">{{ h.source }}</span> #{{ h.source_request_id or "" }}</td>
+                            <td>{{ h.changed_by.full_name if h.changed_by else "—" }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-muted">No hardware changes recorded.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button></div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var modalEl = document.getElementById("compareModal");
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        modalEl.addEventListener("hidden.bs.modal", function () { modalEl.remove(); });
+    })();
+</script>

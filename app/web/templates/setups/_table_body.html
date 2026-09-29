@@ -73,7 +73,7 @@
                 <td>{{ loop.index + (page - 1) * page_size }}</td>
                 <td><span class="badge rms-status-{{ row.setup.status }}">{{ row.setup.status }}</span></td>
                 <td>{{ row.setup.ip_address }}</td>
-                <td>{{ row.setup.hostname }}</td>
+                <td>{{ row.setup.hostname }}{% if row.borrowed_by_group %} <span class="badge bg-info text-dark" title="Currently borrowed; original group unchanged"><i class="bi bi-box-arrow-in-right me-1"></i>Borrowed by {{ row.borrowed_by_group.name }}</span>{% endif %}</td>
                 <td>{{ row.reservation.user.full_name if row.reservation else "—" }}</td>
                 <td class="{{ 'rms-cell-changed' if 'form_factor' in changed }}"{{ ' title="Changed from original"'|safe if 'form_factor' in changed }}>{{ row.setup.form_factor or "—" }}</td>
                 <td class="{{ 'rms-cell-changed' if 'capacity' in changed }}"{{ ' title="Changed from original"'|safe if 'capacity' in changed }}>{{ row.setup.capacity or "—" }}</td>
@@ -98,13 +98,17 @@
                     {% else %}—{% endif %}
                 </td>
                 <td class="rms-truncate" title="{{ (row.reservation.remarks if row.reservation and row.reservation.remarks else row.setup.remarks) or '' }}">{{ (row.reservation.remarks if row.reservation and row.reservation.remarks else row.setup.remarks) or "—" }}</td>
-                <td>
+                <td class="text-nowrap">
+                    <button type="button" class="btn btn-outline-{{ 'warning' if changed else 'secondary' }} btn-sm" title="Original vs Current hardware{{ ' (changed)' if changed }}"
+                            hx-get="/setups/{{ row.setup.id }}/hardware-compare" hx-target="#dialogContainer" hx-swap="innerHTML">
+                        <i class="bi bi-columns-gap"></i>
+                    </button>
                     {% if is_admin_setup_manager %}
                     <button type="button" class="btn btn-outline-secondary btn-sm" title="Edit setup"
                             hx-get="/setups/{{ row.setup.id }}/edit-form" hx-target="#dialogContainer" hx-swap="innerHTML">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    {% else %}—{% endif %}
+                    {% endif %}
                 </td>
             </tr>
             {% else %}

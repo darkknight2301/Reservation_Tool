@@ -160,24 +160,43 @@ class SwapService:
         """
         Group/setup access rule for raising a Swap (independent of any
         Reservation): the requester must belong to the group that
-        currently holds the setup -- its owning ``group_id`` or a group
-        holding active borrowed access. OWNER may always act. A setup with
+        currently holds the setup -- the group holding active borrowed access
+        if the setup is lent out, otherwise its owning ``group_id``. OWNER may always act. A setup with
         no group at all is unrestricted (nothing to be a member of). This
         is deliberately NOT hierarchy-based: the approval hierarchy only
         routes approvals and never widens who may raise a request.
         """
         if user.role and user.role.name in _UNIVERSAL_APPROVER_ROLES:
             return
-        holding_groups = set()
-        if setup.group_id:
+        # EFFECTIVE holder: while a Borrow grant is active the borrowing group holds
+        # the setup and the lending (owning) group temporarily loses swap access;
+        # returning the borrow restores it.
+        holding_groups = set(self._setup_repository.get_active_grant_group_ids(setup.id))
+        if not holding_groups and setup.group_id:
             holding_groups.add(setup.group_id)
-        holding_groups.update(self._setup_repository.get_active_grant_group_ids(setup.id))
         if not holding_groups:
             return
         if not (holding_groups & self._user_group_ids(user)):
             raise AuthorizationError(
                 "You may only request a swap for setups belonging to your group ({0} is not).".format(setup.hostname)
             )
+
+    def swappable_columns(self, setup_a, setup_b) -> List[str]:
+        """Column names that can actually be swapped between these two setups (present on both) -- used by the UI."""
+        return self._common_swappable_columns(setup_a, setup_b)
+
+    def can_decide(self, swap: SwapRequest, acting_user: User) -> bool:
+        """True if ``acting_user`` may approve/reject this swap (hierarchy routing) -- used by the UI to show only usable actions."""
+        if swap.status != SwapStatus.PENDING:
+            return False
+        setup = self._setup_repository.get_by_id(swap.current_setup_id) if swap.current_setup_id else None
+        if setup is None:
+            return False
+        try:
+            self._assert_can_approve(swap, setup, acting_user)
+        except AuthorizationError:
+            return False
+        return True
 
     def _common_swappable_columns(self, setup_a, setup_b) -> List[str]:
         """

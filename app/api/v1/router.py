@@ -5,6 +5,7 @@ from app.api.v1 import (
     announcements,
     audit,
     auth,
+    borrows,
     exports,
     group_hierarchy,
     groups,
@@ -29,6 +30,7 @@ api_router.include_router(group_hierarchy.router)
 api_router.include_router(setups.router)
 api_router.include_router(reservations.router)
 api_router.include_router(swaps.router)
+api_router.include_router(borrows.router)
 api_router.include_router(announcements.router)
 api_router.include_router(audit.router)
 api_router.include_router(exports.router)

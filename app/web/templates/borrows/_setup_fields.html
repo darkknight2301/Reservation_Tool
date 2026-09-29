@@ -1,0 +1,23 @@
+{% if not source_lead_id %}
+<div class="form-text mb-2">Select the source lead first; their group's setups will appear here.</div>
+{% elif setups %}
+<label class="form-label small">Setup needed</label>
+<select class="form-select" name="setup_id" required
+        hx-get="/borrows/request-dialog/setups" hx-target="#borrowSetupFields" hx-swap="innerHTML"
+        hx-include="[name='source_lead_id']" hx-trigger="change">
+    {% for s in setups %}
+    <option value="{{ s.id }}" {% if selected_setup and s.id == selected_setup.id %}selected{% endif %}>{{ s.hostname }} ({{ s.ip_address }}) - {{ s.location }}</option>
+    {% endfor %}
+</select>
+<div class="mt-3">
+    <label class="form-label small">Hardware required</label>
+    <select class="form-select" name="hardware_field_name">
+        <option value="">Entire setup</option>
+        {% for f in hardware_fields %}
+        <option value="{{ f }}">{{ f|replace("_", " ")|title }} only</option>
+        {% endfor %}
+    </select>
+</div>
+{% else %}
+<div class="alert alert-warning py-2 mb-0">This lead's group has no setup available to borrow right now.</div>
+{% endif %}

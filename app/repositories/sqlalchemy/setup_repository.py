@@ -1,7 +1,7 @@
 """SQLAlchemy implementation of the Setup repository."""
 from typing import List, Optional, Tuple
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Query, Session
 
 from app.models.setup import Setup
@@ -20,6 +20,17 @@ class SetupRepository:
 
     def get_by_id(self, setup_id: int) -> Optional[Setup]:
         return self._db.query(Setup).filter(Setup.id == setup_id).first()
+
+    def get_active_grants(self, setup_ids: List[int]) -> dict:
+        """``{setup_id: active SetupAccessGrant}`` for the given setups (used to show who currently holds a lent-out setup)."""
+        if not setup_ids:
+            return {}
+        rows = (
+            self._db.query(SetupAccessGrant)
+            .filter(SetupAccessGrant.setup_id.in_(setup_ids), SetupAccessGrant.is_active.is_(True))
+            .all()
+        )
+        return {row.setup_id: row for row in rows}
 
     def get_active_grant_group_ids(self, setup_id: int) -> List[int]:
         """Group ids currently holding temporary (borrowed) access to this setup."""
@@ -42,7 +53,20 @@ class SetupRepository:
         if filters.product_id is not None:
             query = query.filter(Setup.product_id == filters.product_id)
         if filters.group_id is not None:
-            query = query.filter(Setup.group_id == filters.group_id)
+            # EFFECTIVE group: a setup currently lent out via an active Borrow grant is
+            # listed under the borrowing group instead of its (unchanged) owning group.
+            any_active_grant = (
+                self._db.query(SetupAccessGrant.id)
+                .filter(SetupAccessGrant.setup_id == Setup.id, SetupAccessGrant.is_active.is_(True))
+                .exists()
+            )
+            granted_to_group = (
+                self._db.query(SetupAccessGrant.setup_id)
+                .filter(SetupAccessGrant.granted_to_group_id == filters.group_id, SetupAccessGrant.is_active.is_(True))
+            )
+            query = query.filter(
+                or_(and_(Setup.group_id == filters.group_id, ~any_active_grant), Setup.id.in_(granted_to_group))
+            )
         if filters.status:
             query = query.filter(Setup.status == filters.status)
         if filters.location:

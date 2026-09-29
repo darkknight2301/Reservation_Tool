@@ -35,6 +35,10 @@ class SetupService:
     def list(self, filters: SetupFilter, page: int, page_size: int) -> Tuple[List[Setup], int]:
         return self._setup_repository.list(filters, page, page_size)
 
+    def get_active_grants(self, setup_ids: List[int]) -> dict:
+        """Active Borrow access grants keyed by setup id (who currently holds a lent-out setup)."""
+        return self._setup_repository.get_active_grants(setup_ids)
+
     def list_all(self, filters: SetupFilter) -> List[Setup]:
         return self._setup_repository.list_all(filters)
 

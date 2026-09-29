@@ -1,0 +1,86 @@
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <ul class="nav nav-pills">
+        <li class="nav-item">
+            <a class="nav-link {{ 'active' if tab == 'pending' }}" href="#" hx-get="/approvals/content?tab=pending&mine={{ 'true' if mine else 'false' }}" hx-target="#approvalContent" hx-swap="innerHTML">
+                <i class="bi bi-hourglass-split me-1"></i>Pending Approvals
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {{ 'active' if tab == 'history' }}" href="#" hx-get="/approvals/content?tab=history&mine={{ 'true' if mine else 'false' }}" hx-target="#approvalContent" hx-swap="innerHTML">
+                <i class="bi bi-clock-history me-1"></i>Approval History
+            </a>
+        </li>
+    </ul>
+    <a class="btn btn-outline-secondary btn-sm" href="#" hx-get="/approvals/content?tab={{ tab }}&mine={{ 'false' if mine else 'true' }}" hx-target="#approvalContent" hx-swap="innerHTML">
+        <i class="bi bi-person me-1"></i>{{ "Showing my requests - show all" if mine else "Show only my requests" }}
+    </a>
+</div>
+
+{% macro badge(status) %}
+<span class="badge {% if status in ('PENDING',) %}bg-warning text-dark{% elif status in ('COMPLETED','RETURNED') %}bg-success{% elif status == 'REJECTED' %}bg-danger{% else %}bg-secondary{% endif %}">{{ status }}</span>
+{% endmacro %}
+
+{% if tab == "pending" %}
+<div class="row g-3">
+    {% for i in items %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card rms-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <span class="badge {{ 'bg-warning text-dark' if i.kind == 'SWAP' else 'bg-primary' }}">{{ i.kind }}</span>
+                    {{ badge(i.status) }}
+                </div>
+                <h6 class="mt-2 mb-1"><i class="bi bi-hdd-network me-1"></i>{{ i.title }}</h6>
+                <p class="text-muted small mb-1">Requested by {{ i.requester }}{% if i.detail %} &middot; {{ i.detail }}{% endif %}</p>
+                {% if i.from_to %}<p class="small mb-1"><i class="bi bi-diagram-2 me-1"></i>{{ i.from_to }}</p>{% endif %}
+                {% if i.start or i.end %}<p class="small mb-1"><i class="bi bi-calendar-range me-1"></i>{{ i.start.strftime("%Y-%m-%d %H:%M") if i.start else "…" }} → {{ i.end.strftime("%Y-%m-%d %H:%M") if i.end else "…" }}</p>{% endif %}
+                {% if i.reason %}<p class="small mb-2">{{ i.reason }}</p>{% endif %}
+                <p class="small text-muted mb-2"><i class="bi bi-people me-1"></i>
+                    {% if i.routed %}Awaiting any ONE of: {{ i.routed }}{% else %}Awaiting any authorised approver{% endif %}
+                </p>
+
+                {% if i.can_decide %}
+                <input type="text" class="form-control form-control-sm mb-2" id="rr_{{ i.kind }}_{{ i.id }}" placeholder="Rejection reason (optional)">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success btn-sm flex-fill" hx-post="/approvals/{{ i.kind|lower }}/{{ i.id }}/approve" hx-target="#approvalContent" hx-swap="innerHTML"
+                            data-confirm-title="Approve {{ i.kind|lower }}" data-confirm-body="Approve this {{ i.kind|lower }} request?"><i class="bi bi-check-lg me-1"></i>Approve</button>
+                    <button class="btn btn-outline-danger btn-sm flex-fill" hx-post="/approvals/{{ i.kind|lower }}/{{ i.id }}/reject" hx-target="#approvalContent" hx-swap="innerHTML"
+                            hx-vals='js:{"rejection_reason":document.getElementById("rr_{{ i.kind }}_{{ i.id }}").value}'
+                            data-confirm-title="Reject {{ i.kind|lower }}" data-confirm-body="Reject this {{ i.kind|lower }} request?"><i class="bi bi-x-lg me-1"></i>Reject</button>
+                </div>
+                {% elif i.can_cancel %}
+                <button class="btn btn-outline-secondary btn-sm w-100" hx-post="/approvals/{{ i.kind|lower }}/{{ i.id }}/cancel" hx-target="#approvalContent" hx-swap="innerHTML"
+                        data-confirm-title="Cancel request" data-confirm-body="Withdraw this request?"><i class="bi bi-x-circle me-1"></i>Cancel my request</button>
+                {% else %}
+                <div class="small text-muted"><i class="bi bi-lock me-1"></i>You are not one of the routed approvers for this request.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12"><div class="alert alert-info mb-0">Nothing is waiting for approval.</div></div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="table-responsive">
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Type</th><th>#</th><th>Request</th><th>Requested by</th><th>Borrower ← Source</th><th>Status</th><th>Decided by</th><th>Updated</th></tr></thead>
+        <tbody>
+            {% for i in items %}
+            <tr>
+                <td><span class="badge {{ 'bg-warning text-dark' if i.kind == 'SWAP' else 'bg-primary' }}">{{ i.kind }}</span></td>
+                <td>{{ i.id }}</td>
+                <td>{{ i.title }}{% if i.detail %}<div class="small text-muted">{{ i.detail }}</div>{% endif %}{% if i.reason %}<div class="small">{{ i.reason }}</div>{% endif %}</td>
+                <td>{{ i.requester }}</td>
+                <td>{{ i.from_to or "—" }}</td>
+                <td>{{ badge(i.status) }}{% if i.kind == "BORROW" and i.status == "COMPLETED" and i.end and i.end < now %} <span class="badge bg-danger">Overdue</span>{% endif %}</td>
+                <td>{{ i.decided_by or "—" }}</td>
+                <td>{{ i.updated_at.strftime("%Y-%m-%d %H:%M") if i.updated_at else "" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-muted">No approval history yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

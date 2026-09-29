@@ -11,6 +11,9 @@ class ISetupRepository(Protocol):
     def get_by_id(self, setup_id: int) -> Optional[Setup]:
         ...
 
+    def get_active_grants(self, setup_ids: List[int]) -> dict:
+        ...
+
     def get_active_grant_group_ids(self, setup_id: int) -> List[int]:
         ...
 

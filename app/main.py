@@ -22,6 +22,8 @@ from app.web.routers.docs_view import router as docs_web_router
 from app.web.routers.groups_view import router as groups_web_router
 from app.web.routers.products_view import router as products_web_router
 from app.web.routers.setups_view import router as setups_web_router
+from app.web.routers.approvals_view import router as approvals_web_router
+from app.web.routers.borrows_view import router as borrows_web_router
 from app.web.routers.swap_approvals_view import router as swap_approvals_web_router
 from app.web.routers.users_view import router as users_web_router
 
@@ -78,6 +80,8 @@ def create_app() -> FastAPI:
     # feature was retired per business rule 6 ("remove/avoid swap-mapping
     # functionality"). See ARCHITECTURE_ASSESSMENT.md section 3.3.
     app.include_router(swap_approvals_web_router)
+    app.include_router(borrows_web_router)
+    app.include_router(approvals_web_router)
     app.include_router(announcements_web_router)
     app.include_router(audit_web_router)
     app.include_router(developer_logs_web_router)

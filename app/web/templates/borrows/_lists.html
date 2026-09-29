@@ -1,0 +1,97 @@
+{% macro what(b) %}{{ b.setup.hostname if b.setup else "?" }}{% if b.hardware_field_name %} <span class="badge bg-secondary">{{ b.hardware_field_name|replace("_", " ") }}</span>{% else %} <span class="badge bg-light text-dark border">entire setup</span>{% endif %}{% endmacro %}
+{% macro window(b) %}{% if b.start_time or b.end_time %}{{ b.start_time.strftime("%Y-%m-%d %H:%M") if b.start_time else "…" }} → {{ b.end_time.strftime("%Y-%m-%d %H:%M") if b.end_time else "…" }}{% else %}—{% endif %}{% endmacro %}
+
+<h6 class="mt-2"><i class="bi bi-hourglass-split me-1"></i>Pending approval <span class="badge bg-warning text-dark">{{ pending|length }}</span></h6>
+<div class="row g-3 mb-4" id="borrowPending">
+    {% for b in pending %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card rms-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between"><h6 class="mb-1"><i class="bi bi-hdd-network me-1"></i>{{ what(b) }}</h6><span class="badge bg-warning text-dark">PENDING</span></div>
+                <p class="small mb-1"><strong>Borrower:</strong> {{ b.requester.full_name if b.requester else "?" }} ({{ b.target_group.name if b.target_group else "?" }})</p>
+                <p class="small mb-1"><strong>Source:</strong> {{ b.source_group.name if b.source_group else "?" }}</p>
+                <p class="small mb-1"><i class="bi bi-calendar-range me-1"></i>{{ window(b) }}</p>
+                {% if b.reason %}<p class="small mb-2">{{ b.reason }}</p>{% endif %}
+                {% if b.routed_approver_emails %}<p class="small text-muted mb-2"><i class="bi bi-people me-1"></i>Approval status: awaiting any ONE of {{ b.routed_approver_emails }}</p>{% endif %}
+
+                {% if b.requester_id == current_user.id %}
+                <button class="btn btn-outline-secondary btn-sm w-100"
+                        hx-post="/borrows/{{ b.id }}/cancel" hx-target="#borrowLists" hx-swap="innerHTML"
+                        data-confirm-title="Cancel request" data-confirm-body="Withdraw this borrow request?">
+                    <i class="bi bi-x-circle me-1"></i>Cancel my request
+                </button>
+                {% elif current_user_permissions and 'borrow:approve' in current_user_permissions %}
+                <input type="text" class="form-control form-control-sm mb-2" id="borrowRejectReason_{{ b.id }}" placeholder="Rejection reason (optional)">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success btn-sm flex-fill"
+                            hx-post="/borrows/{{ b.id }}/approve" hx-target="#borrowLists" hx-swap="innerHTML"
+                            data-confirm-title="Approve borrow" data-confirm-body="Give the borrowing group access to this setup until it is returned?">
+                        <i class="bi bi-check-lg me-1"></i>Approve
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm flex-fill"
+                            hx-post="/borrows/{{ b.id }}/reject" hx-target="#borrowLists" hx-swap="innerHTML"
+                            hx-vals='js:{"rejection_reason":document.getElementById("borrowRejectReason_{{ b.id }}").value}'
+                            data-confirm-title="Reject borrow" data-confirm-body="Reject this borrow request?">
+                        <i class="bi bi-x-lg me-1"></i>Reject
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12"><div class="alert alert-info mb-0">No borrow requests are pending.</div></div>
+    {% endfor %}
+</div>
+
+<h6><i class="bi bi-box-arrow-in-right me-1"></i>Currently borrowed <span class="badge bg-info text-dark">{{ active|length }}</span></h6>
+<div class="table-responsive mb-4" id="borrowActive">
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Setup / hardware</th><th>Borrower (group)</th><th>Source (owner)</th><th>Window</th><th>Requested by</th><th>Approved by</th><th></th></tr></thead>
+        <tbody>
+            {% for b in active %}
+            <tr>
+                <td>{{ what(b) }}</td>
+                <td>{{ b.target_group.name if b.target_group else "?" }}</td>
+                <td>{{ b.source_group.name if b.source_group else "?" }}</td>
+                <td>{{ window(b) }}{% if b.end_time and b.end_time < now %} <span class="badge bg-danger">Overdue</span>{% endif %}</td>
+                <td>{{ b.requester.full_name if b.requester else "?" }}</td>
+                <td><span class="badge bg-success">APPROVED</span> {{ b.approved_by.full_name if b.approved_by else "" }}</td>
+                <td class="text-end">
+                    {% if current_user_permissions and 'borrow:return' in current_user_permissions %}
+                    <button class="btn btn-warning btn-sm"
+                            hx-post="/borrows/{{ b.id }}/return" hx-target="#borrowLists" hx-swap="innerHTML"
+                            data-confirm-title="Return / get back" data-confirm-body="Return this setup to its owning group and notify the leads?">
+                        <i class="bi bi-arrow-return-left me-1"></i>Return / Get back
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-muted">Nothing is currently borrowed.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h6><i class="bi bi-clock-history me-1"></i>History</h6>
+<div class="table-responsive" id="borrowHistory">
+    <table class="table table-sm align-middle">
+        <thead><tr><th>#</th><th>Setup / hardware</th><th>Borrower → Owner</th><th>Status</th><th>Window</th><th>Decided by</th><th>Returned</th></tr></thead>
+        <tbody>
+            {% for b in history %}
+            <tr>
+                <td>{{ b.id }}</td>
+                <td>{{ what(b) }}</td>
+                <td>{{ b.target_group.name if b.target_group else "?" }} → {{ b.source_group.name if b.source_group else "?" }}</td>
+                <td><span class="badge bg-secondary">{{ b.status }}</span></td>
+                <td>{{ window(b) }}</td>
+                <td>{{ b.approved_by.full_name if b.approved_by else "—" }}</td>
+                <td>{{ b.returned_at.strftime("%Y-%m-%d %H:%M") if b.returned_at else "—" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-muted">No completed borrow history yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

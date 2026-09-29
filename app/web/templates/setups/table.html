@@ -4,6 +4,10 @@
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <h4 class="mb-0"><i class="bi bi-table me-2"></i>Reservation Table</h4>
     <div class="d-flex gap-2">
+        {% if 'borrow:view' in current_user_permissions %}
+        <a href="/borrows" class="btn btn-outline-info btn-sm" title="Borrow a setup from another lead, or return one"><i class="bi bi-box-arrow-in-right me-1"></i>Borrow / Return</a>
+        {% endif %}
+        <a href="/approvals" class="btn btn-outline-secondary btn-sm" title="Pending approvals and approval history"><i class="bi bi-check2-square me-1"></i>Approvals</a>
         <button type="button" id="exportSetupsBtn" class="btn btn-outline-primary btn-sm">
             <i class="bi bi-file-earmark-excel me-1"></i>Export
         </button>

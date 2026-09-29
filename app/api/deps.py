@@ -16,6 +16,7 @@ from app.repositories.sqlalchemy.audit_repository import AuditLogRepository
 from app.repositories.sqlalchemy.export_repository import ExportRepository
 from app.repositories.sqlalchemy.group_repository import GroupRepository
 from app.repositories.sqlalchemy.group_hierarchy_repository import GroupHierarchyRepository
+from app.repositories.sqlalchemy.borrow_repository import BorrowRepository
 from app.repositories.sqlalchemy.hardware_baseline_repository import HardwareBaselineRepository
 from app.repositories.sqlalchemy.hardware_change_log_repository import HardwareChangeLogRepository
 from app.repositories.sqlalchemy.product_repository import ProductRepository
@@ -35,6 +36,7 @@ from app.services.developer_logs_service import DeveloperLogsService
 from app.services.email_service import EmailService
 from app.services.export_service import ExportService
 from app.services.group_service import GroupService
+from app.services.borrow_service import BorrowService
 from app.services.hardware_state_service import HardwareStateService
 from app.services.group_hierarchy_service import GroupHierarchyService
 from app.services.import_service import ImportService
@@ -239,6 +241,26 @@ def get_swap_service(
         swap_repository, reservation_repository, setup_repository, audit_service,
         hardware_change_log_repository, approval_routing_service, template_service, notification_service,
         hardware_state_service,
+    )
+
+
+def get_borrow_repository(db: Session = Depends(get_db)) -> BorrowRepository:
+    return BorrowRepository(db)
+
+
+def get_borrow_service(
+    borrow_repository: BorrowRepository = Depends(get_borrow_repository),
+    setup_repository: SetupRepository = Depends(get_setup_repository),
+    user_repository: UserRepository = Depends(get_user_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+    approval_routing_service: ApprovalRoutingService = Depends(get_approval_routing_service),
+    template_service: TemplateService = Depends(get_template_service),
+    notification_service: NotificationService = Depends(get_notification_service),
+    hardware_state_service: HardwareStateService = Depends(get_hardware_state_service),
+) -> BorrowService:
+    return BorrowService(
+        borrow_repository, setup_repository, user_repository, audit_service,
+        approval_routing_service, template_service, notification_service, hardware_state_service,
     )
 
 

@@ -1,0 +1,11 @@
+{% if column_options %}
+<label class="form-label small">Column(s) to exchange</label>
+<select class="form-select" name="column_names" multiple size="{{ [column_options|length, 8]|min }}">
+    {% for col in column_options %}
+    <option value="{{ col.name }}" {% if not col.enabled %}disabled{% endif %}>{{ col.label }}{% if not col.enabled %} - not on both setups{% endif %}</option>
+    {% endfor %}
+</select>
+<div class="form-text">Only columns present on <strong>both</strong> setups can be selected (others are greyed out). Ctrl/Cmd-click to pick several. Select none to swap every common column.</div>
+{% else %}
+<div class="alert alert-warning py-2 mb-0">Choose a setup to swap with.</div>
+{% endif %}
