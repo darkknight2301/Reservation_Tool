@@ -1,145 +1,180 @@
 # Reservation Management System — User Guide
 
+This guide describes what the web application does today, using the labels you see on screen. Buttons and menu items appear only if your role allows them.
+
 ## 1. Overview
 
-Web app for reserving lab/test hardware ("setups") grouped under Products. Users browse a product's setup table, reserve/swap/unreserve equipment, and see announcements. Admins manage products, dynamic setup templates, groups, users, and audit logs.
+The system lets teams reserve shared hardware **setups**, exchange hardware between setups (**Swap**), and temporarily lend a setup to another group (**Borrow**). Reserve, Swap and Borrow are three independent workflows: none of them requires another.
 
-## 2. Getting Started
+- **Original vs Current hardware** — every setup remembers the hardware it was first recorded with (Original). Swaps change what is Current; changed cells are highlighted.
+- **Approvals** — Swap and Borrow requests are routed to the leads configured for the relevant group; any one of them can approve.
 
-- Access via browser at the app URL. No public/anonymous pages besides Login, Register, Forgot/Reset Password.
-- **Login** (`/login`): username + password. "Forgot password?" link available.
-- **Register** (`/register`): username, email, full name, password (8+ chars, upper+lower+digit), optional multi-select Groups. New accounts start in **PENDING** status and cannot log in until an authorized user approves them.
-- **Forgot/Reset Password** (`/forgot-password`, `/reset-password`): emails a single-use reset link (30 min expiry) if the address matches an approved, active account. The message shown is the same either way, so it won't confirm whether an email is registered.
-- Password fields have a show/hide (eye) toggle.
+## 2. Login and registration
 
-## 3. User Roles
+- **Login** (`/login`): enter **Username** and **Password**, then **Login**. After login you land on the **Dashboard**.
+- **Register** (`/register`, link "Register here"): fill **Full name**, **Username**, **Email**, **Password**, choose **Groups**, then **Register**. The page states *"Your account will require approval from a Lead or above."* Until approved, login shows *"Your account is pending approval by a Lead or above."*
+- **Forgot password?** on the login page emails a reset link (see §14 for when email is only logged).
+- Disabled or rejected accounts see *"Your account is disabled. Contact an administrator."*
+- **Logout** is at the right end of the top bar.
 
-Roles: **User, Lead, Developer, Developer Lead, Owner** (Owner has every permission).
+## 3. Roles and permissions
 
-**Roles were renamed**: the old "User" role is now **Bot**, the old "Developer" role is now **User**, and "Developer Lead" is now **Manager**. Lead and Owner are unchanged in name. Permissions per role:
-
-| Feature | Bot | User | Lead | Manager | Owner |
-|---|---|---|---|---|---|
-| View products / setup table / announcements | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Reserve / Swap-request setups; cancel own reservation | | ✓ | ✓ | ✓ | ✓ |
-| Export Excel | | ✓ | ✓ | ✓ | ✓ |
-| Approve/reject swaps; cancel any reservation | | | ✓ | ✓ | ✓ |
-| Import Excel | | | ✓ | ✓ | ✓ |
-| Approve/reject pending registrations | | | ✓ | ✓ | ✓ |
-| Manage Groups | | | ✓ | ✓ | ✓ |
-| Manage products & Design Template | | | | ✓ | ✓ |
-| Manage users (create/edit/deactivate) | | | | ✓ | ✓ |
-| Manage Announcements | | | | ✓ | ✓ |
-| View Audit Logs | | | | ✓ | ✓ |
-| View Developer (Excel transaction) Logs | | | | ✓ | ✓ |
-
-The **Bot** role is view-only by default (no reserve/swap/import/export). **Lead no longer has access to Developer Logs** (Manager/Owner only now). Only permitted actions/nav items are shown to a given role.
-
-## 4. Dashboard
-
-Landing page after login: welcome message, active Announcements, and a product card grid (same as Product Selection).
-
-Navbar: brand → Dashboard, Products, Groups, Announcements (if permitted); Admin dropdown (Products Admin, Users, Approvals, Logs, Developer Logs — each only if permitted); user menu (username, theme toggle, Logout).
-
-## 5. Product Selection
-
-`/products`: card per Product. Clicking a card opens that product's setup table (`/setups?product_id=...`). Products with no setups yet still open normally, showing an empty table.
-
-## 6. Product-Specific Templates
-
-Under **Admin → Products**, an authorized user (product:manage — Developer Lead/Owner) clicks the **Template** button on a product row to open **Design Template**.
-
-- **Mandatory columns** (every product, always, cannot be renamed/reordered/deleted): IP, User, Owner, Reservation, Remark, Location, Group, Product.
-- **Custom columns**: add/edit/delete/reorder (up/down arrows). Each has: Name (key), Label, Type (String, Integer, Float, Boolean, Date, DateTime, Dropdown), Required, Default Value, and — for Dropdown — a comma-separated list of Allowed Values.
-- Custom columns appear in the setup table (when filtered to that one product), in Setup Edit, and in that product's Excel import/export.
-
-## 7. Setup Table
-
-| Column | Description |
+| Role | What it can do |
 |---|---|
-| (checkbox) | Select row(s) for Reserve/Swap/Unreserve; disabled if reserved by someone else |
-| Sr No | Row number |
-| Status | AVAILABLE / RESERVED / MAINTENANCE / RETIRED |
-| IP, Hostname | Setup identifiers |
-| User | Current reserver's name (— if available) |
-| Form Factor, Capacity, Aardvark, Quarch, APC, Remote Server, Hardware Info, Adapter | Hardware fields |
-| Owner | Assigned owner |
-| Location, Group, Product | Mandatory fields |
-| *(custom columns)* | Only shown when filtered to a single Product |
-| Reserved Time | Reservation window, if reserved |
-| Remarks | Reservation remark, or the setup's own remark |
-| Actions | Edit button (product:manage only) |
+| **BOT** | View only: products, groups, reservations, swaps, announcements. |
+| **USER** | Everything BOT can, plus reserve/unreserve own reservations, raise Swap requests, Export. |
+| **LEAD** | USER abilities plus: unreserve anyone's reservation, approve/reject Swaps, request/approve/return **Borrow**, approve new users, manage groups, Excel Import, view **Developer Logs**. |
+| **MANAGER** | LEAD abilities plus manage users, products/templates and announcements, and view **Logs** (audit). |
+| **OWNER** | All permissions. |
 
-Filters: Product, Group, Status, Location dropdowns/search, plus a per-column text filter row (client-side). No server-side sort; filtering only. The page opens pre-filtered to the first Product and first Group (rather than "All"), and shows up to 200 rows per page.
+Additional rules:
 
-## 8. Reserve
+- Approving a specific Swap or Borrow is further limited to the **routed approvers** for that request (§9, §11); Owner can always act; nobody can approve their own Borrow request.
+- **Swap** access is by group: you can only swap setups belonging to your group (or a group holding it through an active Borrow). A setup with no group is open to everyone with Swap permission.
+- Only LEAD, MANAGER and OWNER may use **Borrow**, and the requester must belong to a group.
 
-1. Select one or more AVAILABLE setups' checkboxes (requires `reservation:create` — User role or above).
-2. Click **Reserve**.
-3. Dialog shows the selected setups, a start/end time range, a Remarks field, and Announcement channel checkboxes (Wall, Mail to Leads, Mail to Group, Mail to All).
-4. Submit. One reservation is created per selected setup over the same time window. Validation errors (e.g. overlapping window, setup not available) are shown per-setup; setups that succeeded are still reserved even if another in the batch failed.
+## 4. Top bar and dashboard
+
+Top-bar items (shown per permission): **Dashboard**, **Setups**, **Announcements**, **Swap Approvals**, **Approvals**, **Borrow**, a second **Approvals** (user registrations, person-check icon), **Products**, **Groups**, **Users**, **Logs**, **Developer Logs**, and a **Documentation** menu (**User Guide**, **API Guide**; available once the Sphinx site has been built).
+
+> There are two items named **Approvals**. The one with the check-square icon (everyone) lists **Swap and Borrow** approvals. The one with the person-check icon (leads/managers) is the **Approval Dashboard** for new user registrations.
+
+The **Dashboard** shows *Welcome, <name>*, cards for **Total Setups**, **Available Now**, **My Active Reservations** and **Pending Approvals** (pending user registrations, for users who can approve them), plus shortcuts **Browse Setups & Reserve** and **View Announcements**.
+
+## 5. Product selection
+
+**Setups** opens **Select a Product**: one card per product (with the number of setups and how many are available) and **View All Setups**. Choose a product to open its table.
+
+## 6. The setups table ("Reservation Table")
+
+Columns: Sr No, Status, IP, Hostname, User, Form Factor, Capacity, SSD, HDD, Aardvark, Quarch, APC, Remote Server, Hardware Info, Adapter, Owner, Location, any **product-specific columns**, Reserved Time, Remarks, Actions.
+
+- **Status** badge: AVAILABLE, RESERVED, MAINTENANCE or RETIRED. A **Borrowed by <group>** badge next to the hostname means the setup is currently lent to that group.
+- **User** and **Reserved Time** show who reserved it and the window.
+- Toolbar: **Export**, **Reserve**, **Swap**, **Unreserve**, **Borrow / Return** (leads), **Approvals**. Reserve/Swap/Unreserve stay disabled until valid rows are ticked.
+- A row's checkbox is enabled only when the setup is AVAILABLE or reserved by you.
+
+### Search and filter
+- Drop-downs **All Products**, **All Groups**, **All Statuses**, a **Location** box and the search box (*Search IP, hostname, hardware...*) reload the table.
+- Each column header has a **Filter** box that filters the rows on the page.
+- Pagination appears below the table.
+
+### Setup details
+- The **columns icon** in **Actions** opens **Original vs Current — <hostname>** (§10).
+- Managers/Owners also see a **pencil** (Edit setup) opening **Edit Setup**: Product, Status, Group, IP Address, Hostname, Owner, Location, Form Factor, Capacity, Adapter, SSD, HDD, Aardvark, Quarch, APC, Remote Server, Hardware Info, Remarks and any **Custom Fields**. Saving an edit makes the values you changed the new **Original** values (fields you did not touch keep theirs).
+
+## 7. Reserve
+
+1. Tick one or more **AVAILABLE** rows and click **Reserve**.
+2. Fill **From** / **Until** (until must be after from), **Reason / remarks** (stored as Remarks), and optionally **Announce this reservation via** options (§13).
+3. Submit. The setup becomes RESERVED and shows you in **User** and the window in **Reserved Time**.
+
+Errors: *"Setup is already reserved for an overlapping time window."*; *"Setup is currently maintenance/retired and cannot be reserved."*. When several setups are reserved together, each is processed separately and the result reports any that failed.
+
+## 8. Unreserve
+
+Tick your reserved rows (Leads and Managers can also unreserve others') and click **Unreserve**, confirm **Unreserve**. The setup returns to AVAILABLE. Reservations whose window ends are completed automatically by a background job. Unreserving is never blocked by a pending Swap or Borrow.
 
 ## 9. Swap
 
-A swap exchanges one field's recorded value (e.g. an SSD) between two setups **you already have reserved** — it does not relocate either reservation.
+A Swap exchanges the value of one or more hardware fields between two setups, after approval.
 
-- **Rules**: both the current setup and the target setup must currently be reserved by you. You pick which column to exchange — one of the fixed hardware fields (SSD, HDD, Hardware Info, Capacity, Form Factor, Adapter, Aardvark, Quarch, APC, Remote Server), or, if the two setups belong to different products, a custom column that exists on **both** products' templates.
-- **Request** (`swap:request` — User role or above): open Swap from your reservation, pick the other setup and the column, optionally add a reason. Starts **PENDING**; a notification is sent for approval.
-- **Approve / reject** (`swap:approve` — Lead role or above): open **Swap Approvals** (nav item) → **Pending Individual Swap Requests**; review and Approve or Reject each one. Approving exchanges the column's value between the two setups (neither reservation changes). The setup's Remarks (visible to everyone in the Setup Table) get a line recording exactly what was swapped and its original value, so it can be restored later via Setup Edit if needed.
-- **Cancel**: the requester can cancel their own still-pending swap request.
-- **Coordinated multi-setup swap mapping** (`swap:approve` — Lead role or above, same **Swap Approvals** screen, under "Pending Mapping Batches"): a separate, unrelated workflow for relocating several reservations across setups at once — build a set of moves (e.g. reservation A → setup B, reservation B → setup A) where every reservation and every target setup appears exactly once, submitted and approved as one batch.
+1. Tick **exactly one** setup and click **Swap** (**Swap Column(s) Between Setups**). No reservation is needed.
+2. **Swap with**: pick another setup you have access to. Only setups that share at least one swappable column are listed.
+3. **Column(s) to exchange**: columns present on **both** setups are selectable; others are greyed out with "not on both setups". Select none to swap every common column. Ctrl/Cmd-click to select several.
+4. Optionally fill **Reason (optional)**, **Start time (optional)**, **End time (optional)** and the announcement options (**Announce this swap request via**). The routed approving leads are always emailed.
+5. Submit. The request is **PENDING**.
 
-## 10. Unreserve
+Swappable columns are the fixed hardware fields (SSD, HDD, hardware info, capacity, form factor, adapter, Aardvark, Quarch, APC, remote server) plus product custom columns that exist on both setups.
 
-1. Select your reserved setup(s) (`reservation:cancel_own`) — or, with `reservation:cancel_any` (Lead role or above), any user's reservation — and open **Unreserve**.
-2. Preview shows what will be released.
-3. Confirm to cancel the reservation; the setup returns to AVAILABLE.
+### Swap approval and status
+- Open **Approvals** (check-square icon). **Pending Approvals** lists requests you can decide (**Approve** / **Reject**, optional rejection reason) or that are yours (**Cancel my request**). Others see *"You are not one of the routed approvers…"*.
+- Routing: for a swap, approval goes to the Lead/Manager of the **requester's setup group** and of every group above it in the configured hierarchy. Any **one** may approve. If nothing is configured, any Lead/Manager/Owner can approve.
+- On approval the values are exchanged and the **Current** hardware changes; **Original** never changes. Reject/cancel change nothing.
+- **Approval History** shows Approved (COMPLETED), REJECTED, CANCELLED and EXPIRED requests with the decider. The older **Swap Approvals** page lists pending swaps with the same actions.
+- **Show only my requests** (toggle, top right of the page) narrows either tab to your own requests.
 
-If a reservation's end time passes and it is **not** manually unreserved, the system automatically completes it and posts a **CRITICAL** announcement plus a direct email to the setup's owner and the reserving user.
+Errors: *"These two setups have no swappable columns in common."*; *"Requested setup must differ from the current setup."*; *"You may only request a swap for setups belonging to your group…"*; *"Setup … cannot be part of a swap"* (maintenance/retired).
 
-## 11. Announcements
+## 10. Original vs Current hardware and changed cells
 
-Options when reserving: **Wall** (dashboard banner), **Mail to Leads** (Lead/Manager/Owner in the setup's Group), **Mail to Group** (all approved members of the Group), **Mail to All** (every active, approved user). Everyone with `announcement:view` (every role) can see active announcements; standalone create/edit/delete (`announcement:manage`) is Manager/Owner only — Lead can view but not manage them.
+- In the table, a cell whose Current value differs from its Original value is **highlighted** (amber). One changed field highlights one cell; several changed fields highlight each cell. Hover a highlighted cell for *Changed from original*.
+- The **columns icon** (amber when the setup has changes) opens **Original vs Current**: *Field / Original / Current*, a **N field(s) changed** badge, a **Borrowed by** badge if applicable, and **Change history** (when, field, from, to, source such as SWAP #id, by whom).
 
-The Announcements screen lists announcements sorted **Critical → High → Normal → Low**, grouped into a collapsible section per priority (Critical and High expanded by default).
+## 11. Borrow
 
-**Automatic critical announcements**: if a reservation's time window elapses without the setup being unreserved, the system itself posts a CRITICAL announcement and emails the setup owner and the reserving user directly (see §10).
+Borrow temporarily gives your group access to a setup owned by another group. The owning group and the hardware values never change. (LEAD, MANAGER, OWNER only.)
 
-## 12. Groups
+1. Open **Borrow** (or **Borrow / Return** on the Setups page) and click **New Borrow Request**.
+2. **Source lead (whose setup you need)**: pick the lead of the other group.
+3. **Setup needed**: the setups of that lead's group that are free to borrow. **Hardware required**: *Entire setup* or one hardware field (informational — access is granted per setup).
+4. Fill **Reason**, **Start time**, **End time** (must be in the future) and announcement options. Routed leads are always emailed.
+5. Submit. The request appears under **Pending approval** with *Borrower*, *Source* and *Approval status: awaiting any ONE of <leads>*.
 
-Lead, Developer Lead, and Owner can create, edit, and delete Groups (name + description) under **Groups**. Groups are used for setup ownership/filtering, user membership (multi-group per user), and announcement targeting (Mail to Group/Leads).
+### Borrow approval and status
+- Approval goes to the source group's Lead/Manager, its parent's lead and the sibling groups under that parent (configured Borrow hierarchy). Any **one** may **Approve** or **Reject**; you cannot decide your own request. Owner can always decide.
+- Approve, Reject and Cancel are available on the **Borrow** page cards and under **Approvals**.
+- After approval the request moves to **Currently borrowed** (Borrower, Source, Approved by, Window, **Overdue** badge if the end time has passed) and the borrowing group gains access; the setup shows **Borrowed by <group>** and is listed under the borrowing group. While lent out, the owning group cannot raise Swaps on it.
+- Other states: REJECTED, CANCELLED, EXPIRED (a pending request whose end time passed), RETURNED. The **History** table lists them.
+- Conflicts: *"Setup … already has a pending or active borrow request."*, *"Setup … is already borrowed by another group."*, *"Your group already holds this setup…"*.
 
-## 13. Product Administration
+### Return / Get back
+In **Currently borrowed**, click **Return / Get back** and confirm. Allowed for the requester, another lead of the borrowing group, a routed approver of the source group, or an Owner. The borrowing group's access ends, the owner's access is restored, the status becomes RETURNED, and the requester and source leads are emailed (plus any announcement channels chosen on the request). Borrowed access does **not** end automatically at the end time; overdue borrows are only flagged.
 
-**Admin → Products** (Developer Lead/Owner): Add/Edit product (name, description); Design Template; Import Excel; Export Excel. A product cannot be deleted while it still has setups (returns an error).
+## 12. Products and templates (Managers/Owners)
 
-## 14. Excel Import
+- **Products** → **Product Management**: **New Product** (Name, Description), edit, delete (blocked while setups use it), **Import Setups**, **Blank Template**.
+- **Design Template** (per product): **Add Custom Column** with *Column Name (key, used in Excel header)*, *Display Label*, *Type* (String, Integer, Float, Boolean, Date, DateTime, Dropdown), *Required*, *Default Value*, *Allowed Values* (Dropdown). Columns can be reordered, deleted, imported (**Import Excel**) and exported (**Export**). Custom columns appear in the setups table and in the Edit Setup dialog.
 
-From a product's Template page → **Import Excel**: upload `.xlsx`. Headers are validated against that product's current template (mandatory columns + existing custom columns). If the file has columns not yet in the template, you get **"New columns detected"** with a choice: **Add to Template & Import** (adds them as String columns, then imports) or **Reject Import** (nothing is committed). Row-level errors (missing required fields, bad types, invalid dropdown values) are listed and block the import until fixed.
+## 13. Announcements and email notifications
 
-## 15. Excel Export
+- **Announcements** lists active announcements; Managers/Owners use **New Announcement** (*Title, Message, Priority LOW/NORMAL/HIGH/CRITICAL, Start, End*) and **Show active only**.
+- On Reserve, Swap and Borrow you may tick **Wall Message** (posts an announcement for 7 days), **Mail Leads**, **Groups** (group members) or **All Users**, and add a custom message.
+- Swap and Borrow requests **always** email the routed approvers; approval/rejection emails the requester (Borrow); Return emails the requester and source leads.
+- Reservations only email leads if you tick **Mail Leads**.
 
-From a product's Template page → **Export**: downloads an `.xlsx` with that product's mandatory + custom columns, in template order, containing current data (or an empty header-only template if the product has no setups yet).
+## 14. Excel import and export
 
-## 16. Logs
+- **Export** (Setups toolbar, and Product template page) downloads an `.xlsx` of the current filter/product (includes custom columns for a product export). Requires export permission (USER and above).
+- **Import**: on the **Products** page (Managers and Owners) use **Import Setups**, or a product's **Design Template → Import Excel**, then upload an `.xlsx` and click **Upload & Import**. (Leads hold the import permission but the Products page itself is Manager/Owner only.) Required headers: `ip_address`, `hostname`, `location`; use **Blank Template** for the exact layout. Rows are matched to existing setups by IP or hostname (existing setups are updated, others created). If any row has an error the **whole import is rejected** and errors are listed by row.
+- Unknown columns in a product import raise **New columns detected**: choose **Add to Template & Import** or **Reject Import**.
+- Imports and exports are recorded in Excel log files and the audit log. Importing does **not** reset Original hardware (only Edit Setup does).
+- If SMTP is not enabled on the server, emails are written to the server log instead of being sent.
 
-- **Audit Logs** (`/admin/logs`, `audit:view` — Manager/Owner only): filterable, paginated table of create/update/delete/approve/reject/login/logout/swap/import/export events with user, entity, timestamp.
-- **Developer Logs** (`/admin/developer-logs`, `logs:view` — Manager, Owner): tree view of rotated Excel import/export transaction log files, each downloadable. Lead no longer has access to this screen.
+## 15. History and audit
 
-## 17. Common Errors
+- **Logs** (**Audit Logs**, Managers and Owners): filter by **All Actions**, **Entity type**, **Entity ID**, **User ID**. Reservations, swaps, borrows, logins, imports/exports and admin changes are recorded.
+- **Developer Logs** (Leads and above): browse/download server log files.
+- Swap and Borrow history: **Approvals → Approval History**, the Borrow **History** table, and **Change history** in Original vs Current.
 
-| Problem | Possible Cause | Solution |
-|---|---|---|
-| "Account is pending approval" at login | Registration not yet approved | Ask a Lead/Developer Lead/Owner to approve via Approvals |
-| Can't delete a Product | Setups still assigned to it | Remove/reassign setups first |
-| Import rejected with row errors | Missing required field, wrong type, invalid dropdown value | Fix the Excel file and re-upload |
-| "New columns detected" | Excel has headers not in the product's template | Choose Add to Template & Import, or fix the file |
-| Swap request rejected as invalid | The two setups aren't both currently reserved by you, or the chosen column isn't common to both products | Pick two setups you have reserved and a shared column |
-| Reset link says invalid/expired | Link older than 30 minutes or already used | Request a new one via Forgot Password |
+## 16. Common workflows
+
+- **Reserve a lab setup:** Setups → product → tick AVAILABLE row → Reserve → dates + reason → submit.
+- **Fix a hardware part between two of your group's setups:** tick one → Swap → pick partner → pick column → reason → submit; a routed lead approves in Approvals.
+- **Borrow another group's setup:** Borrow → New Borrow Request → source lead → setup → dates → submit; wait for any routed lead; when done click Return / Get back.
+- **Approve a request:** Approvals → Pending Approvals → Approve/Reject.
+- **See what changed on a setup:** highlighted cells, or the columns icon.
+
+## 17. Common errors and troubleshooting
+
+| Message / symptom | Cause / fix |
+|---|---|
+| Invalid username or password. | Check credentials; use **Forgot password?**. |
+| Your account is pending approval… | A Lead or above must approve you in the user **Approvals** page. |
+| Setup is already reserved for an overlapping time window. | Choose another window or setup. |
+| reserved_until must be after reserved_from. | Set **Until** later than **From**. |
+| You are not one of the routed approvers… | Only routed leads (or Owner) may decide; ask one of them. |
+| Swap button disabled | Tick exactly one row (only AVAILABLE rows or your own reservations can be ticked). |
+| No other setup you have access to shares a swappable column | Partner must be in your group and share a column. |
+| Borrow menu missing / 403 | Borrow is for Lead, Manager, Owner. |
+| Cell not highlighted after Edit Setup | Edit Setup resets Original for fields you changed. |
+| No email received | SMTP may be disabled; the message is only logged. |
+| 403 / "You do not have permission" | Your role lacks the permission. |
 
 ## 18. FAQ
 
-**Q: Why don't I see Admin/Groups/Logs in the nav?** Your role lacks that permission.
-**Q: Can I belong to more than one group?** Yes — select multiple at registration or have an admin edit your groups.
-**Q: Do custom columns show for every product?** No — a product's custom columns only appear in the setup table when it's filtered to that single product.
-**Q: What happens to a setup's data if a custom column is deleted from a template?** The column definition is removed from the template; its recorded values are no longer shown/editable through the template UI.
+- **Does Swap need a reservation?** No. **Does Borrow?** No.
+- **Can the hierarchy give me access to other groups' setups?** No. It only decides who may approve.
+- **Does approving a Swap change Original hardware?** No, only Current.
+- **Why is a Borrow still active after its end time?** Return is manual; it shows **Overdue**.
+- **Can I swap between different products?** Yes, for columns present on both setups (fixed hardware fields, or custom columns with the same name).

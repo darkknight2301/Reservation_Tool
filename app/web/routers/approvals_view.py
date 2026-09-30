@@ -13,7 +13,7 @@ from typing import Dict, List
 from fastapi import APIRouter, Depends, Form, Request
 
 from app.api.deps import get_borrow_service, get_swap_service
-from app.core.constants import BorrowStatus, PermissionCode, SwapStatus
+from app.core.constants import BorrowStatus, PermissionCode, RoleName, SwapStatus
 from app.core.exceptions import AppError
 from app.models.user import User
 from app.schemas.borrow_request import BorrowDecisionRequest, BorrowFilter
@@ -27,6 +27,32 @@ router = APIRouter(prefix="/approvals", tags=["Web: Approvals"])
 
 _SWAP_HISTORY = (SwapStatus.COMPLETED, SwapStatus.REJECTED, SwapStatus.CANCELLED, SwapStatus.EXPIRED)
 _BORROW_HISTORY = (BorrowStatus.COMPLETED, BorrowStatus.RETURNED, BorrowStatus.REJECTED, BorrowStatus.CANCELLED, BorrowStatus.EXPIRED)
+
+
+_SEE_ALL_ROLES = (RoleName.OWNER, RoleName.DEVELOPER_LEAD)
+
+
+def _user_groups(user: User) -> set:
+    ids = set(g.id for g in (user.groups or []))
+    if user.group_id:
+        ids.add(user.group_id)
+    return ids
+
+
+def _visible(item: Dict, user: User) -> bool:
+    """
+    Least-visibility rule for the Approvals screen: Owner/Manager see everything;
+    everyone else sees only requests they raised, requests they are routed to
+    decide, requests they decided, and requests involving one of their groups.
+    """
+    if user.role and user.role.name in _SEE_ALL_ROLES:
+        return True
+    return (
+        item["requester_id"] == user.id
+        or item["can_decide"]
+        or item["decided_by_id"] == user.id
+        or bool(item["group_ids"] & _user_groups(user))
+    )
 
 
 def _name(user) -> str:
@@ -45,6 +71,11 @@ def _swap_item(swap, user: User, swap_service: SwapService) -> Dict:
         "can_decide": swap_service.can_decide(swap, user),
         "can_cancel": swap.status == SwapStatus.PENDING and swap.requester_id == user.id,
         "from_to": None,
+        "requester_id": swap.requester_id, "decided_by_id": swap.approved_by_id,
+        "group_ids": {g for g in (
+            swap.current_setup.group_id if swap.current_setup else None,
+            swap.requested_setup.group_id if swap.requested_setup else None,
+        ) if g},
     }
 
 
@@ -61,6 +92,8 @@ def _borrow_item(borrow, user: User, borrow_service: BorrowService) -> Dict:
         "from_to": "{0} (borrower) ← {1} (source)".format(
             borrow.target_group.name if borrow.target_group else "?", borrow.source_group.name if borrow.source_group else "?"
         ),
+        "requester_id": borrow.requester_id, "decided_by_id": borrow.approved_by_id,
+        "group_ids": {borrow.source_group_id, borrow.target_group_id},
     }
 
 
@@ -79,6 +112,7 @@ def _context(request: Request, user: User, swap_service: SwapService, borrow_ser
         for status in statuses_borrow:
             found, _ = borrow_service.list(BorrowFilter(status=status, **swap_filter), page=1, page_size=200)
             items.extend(_borrow_item(b, user, borrow_service) for b in found)
+    items = [i for i in items if _visible(i, user)]
     items.sort(key=lambda i: (i["updated_at"], i["id"]), reverse=True)
 
     context = base_context(request, user)

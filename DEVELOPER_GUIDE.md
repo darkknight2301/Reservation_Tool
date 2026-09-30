@@ -1,259 +1,157 @@
-# Developer Guide
+# Reservation Management System — Developer Guide
 
-Audience: engineers building, extending, or operating this codebase.
+Server-rendered FastAPI application (Bootstrap 5 + HTMX + Jinja2) with a JSON API under `/api/v1`. Python 3.8 compatible; SQLAlchemy 1.4, Pydantic 1.10, Alembic. Default database is SQLite (PostgreSQL-ready). See `INSTALLATION.md` for deployment and `API_GUIDE.md` for endpoints.
 
-## Table of Contents
-1. [Architecture](#architecture)
-2. [Folder Structure](#folder-structure)
-3. [Security](#security)
-4. [RBAC](#rbac)
-5. [API Reference](#api-reference)
-6. [Future Automation](#future-automation)
-7. [Developer Standards](#developer-standards)
-8. [Coding Guidelines](#coding-guidelines)
-9. [Testing](#testing)
-10. [Common Issues](#common-issues)
-11. [FAQ](#faq)
+## 1. Architecture
 
----
-
-## Architecture
-
-Clean/layered architecture, strict inward dependency direction:
+Layered, contract-driven:
 
 ```
-Presentation   → app/api/v1 (JSON, Bearer JWT)  +  app/web (Jinja2/HTMX, cookie session)
-Application    → app/services  (business rules, transaction boundaries)
-Domain         → app/schemas   (Pydantic v1 DTOs), app/core/constants (enums)
-Persistence    → app/repositories/interfaces (Protocols) + .../sqlalchemy (impls)
-Infrastructure → app/db (engine/session), app/core (config/logging/security)
+Web routers (app/web/routers) ─┐
+API routers (app/api/v1)      ─┼─> Services (app/services) ─> Repository interfaces (app/repositories/interfaces)
+                                                                  └─> SQLAlchemy repositories (app/repositories/sqlalchemy) ─> Models (app/models)
+Schemas (app/schemas, Pydantic) validate/serialise at the edges.
 ```
 
-**Rules enforced by this layering:**
-- Routers (`api/v1/*`, `web/routers/*`) never touch the ORM directly — they call a Service via `Depends()`.
-- Services depend on repository **interfaces** (`typing.Protocol`), never concrete SQLAlchemy classes — see `app/repositories/interfaces/`. This is what makes a future PostgreSQL swap, or unit testing with fakes, possible without touching services.
-- Repositories return ORM models or `None`/empty collections; they never raise HTTP-shaped exceptions. Services translate persistence facts into domain exceptions (`app/core/exceptions.py`), and `app/middleware/error_handler.py` translates those into the JSON error envelope for the API, or web-specific handlers (`RedirectToLogin`, `ForbiddenWebError` in `app/web/deps.py`) for the browser.
-- Both `api/v1` (JSON) and `web` (HTML/HTMX) routers call the **same** service layer — business logic is never duplicated between the two.
-- `DATABASE_URL` is the only seam between SQLite and PostgreSQL — no dialect-specific SQL exists anywhere in models/repositories, so migrating is a config change (see INSTALLATION.md §Database).
-- The **reservation** is the source of truth for "who reserved what, when" — `Setup.status` is a cached/derived column kept in sync by the service layer inside the same transaction as any reservation state change, so automation can filter `setups.status = 'AVAILABLE'` without a join.
-- Interval-overlap validation (no two ACTIVE reservations on the same setup with overlapping windows) is enforced in `ReservationService`, not a DB constraint — SQLite has no portable exclusion constraint equivalent to PostgreSQL's `EXCLUDE USING gist`.
-- Two independent logging systems, deliberately not merged: `AuditLog` (DB table, human/automation-queryable, append-only, permanent) vs. application logs (`app/core/logging_config.py`, structured JSON, rotated, for ops/debugging) vs. rotating Excel transaction logs (`app/utils/excel_log_rotator.py`, for the Developer Logs screen — see [Future Automation](#future-automation)).
+- **Services** hold all business rules and raise typed errors (`app/core/exceptions.py`); routers only translate HTTP/HTML.
+- **Repositories** are the only code that queries the database; services depend on Protocol interfaces.
+- **Dependency injection** is wired in `app/api/deps.py` (`get_*_service` / `get_*_repository`, `require_permission`).
+- **Independence rule:** Reservation, Swap and Borrow do not depend on each other. `ReservationService` has no Swap/Borrow code; `SwapService` and `BorrowService` never read or write reservations. The approval hierarchy only routes approvals — it never grants access.
 
-For the full entity-relationship diagram and the original design rationale (including why Reservation/Setup/Group/Product are separate aggregates), see the project's architecture document if retained in your repo history; the schema itself is authoritative in `alembic/versions/0001_initial_schema.py` + `0002_reservation_remarks_swap_batch.py`.
+## 2. Directory structure
 
-**Reservation / Swap / Borrow redesign (in progress, tracked in `ARCHITECTURE_ASSESSMENT.md` and `IMPLEMENTATION_PROGRESS.md`):** Reservation, Swap, and Borrow are independent transaction domains over the same `Setup`/`Group` resources.
-
-- **Phase 1** (data model, `alembic/versions/0010_borrow_hierarchy_hardware_history.py`) added, purely additively: `setup_hardware_baseline` (immutable ORIGINAL hardware snapshot per Setup), `hardware_change_logs` (append-only per-field change ledger), `group_hierarchy_edges` (directed-edge DAG for a configurable/data-driven approval hierarchy — a Group can have more than one parent), `borrow_requests` + `setup_access_grants` (the Borrow aggregate; `setups.group_id`, the ORIGINAL owning group, is never overwritten by a Borrow), and new nullable columns on `swap_requests` for the Phase 3 redesign.
-- **Phase 2** (Reservation) removed the one real coupling that existed: `ReservationService.cancel()` no longer blocks on a pending Swap (`ReservationService` has zero references to Swap/Borrow anywhere). The matching UI-level block in the Unreserve dialog was relaxed to an informational-only notice.
-- **Phase 3** (Swap) is complete: `SwapService` exchanges one or more hardware field values *between two setups* (business rule 5) and never touches, creates, or relocates a Reservation, and never re-checks Reservation state at any point — full independence. Every approved exchange is recorded in `hardware_change_logs` (in addition to the existing `previous_*_value` snapshot on the request itself). Approval is routed through `ApprovalRoutingService`, which walks `group_hierarchy_edges` to find the full ancestor-closure of Leads/Managers for the setup's owning Group (ANY ONE of them may approve, or an Owner always may); if none can be resolved (no hierarchy configured yet and the group has no Lead of its own), approval falls back to the flat `swap:approve` permission exactly as before, so an approval can never become unreachable. The multi-node "swap mapping" feature (`/admin/swap-mapping`, `POST /swaps/mapping`) has been removed entirely per business rule 6; single-swap web approval now lives at `/admin/swap-approvals` instead. New `borrow:*` permission codes exist (granted only to LEAD/DEVELOPER_LEAD/OWNER) but Borrow itself (the service, API, and UI) is not implemented yet.
-- **Phase 4** (Borrow service/API) and **Phase 5** (Frontend: Swap/Borrow dialogs, Setup Table cell highlighting) remain to be done.
-
----
-
-## Folder Structure
-
-```
-reservation-system/
-├── app/
-│   ├── main.py                     # FastAPI app factory: middleware, routers, static, startup/shutdown
-│   ├── core/                       # Config, constants/enums, exceptions, JWT/bcrypt, structured logging
-│   ├── db/                         # Engine/session factory, RBAC seed routine
-│   ├── models/                     # SQLAlchemy ORM models (one file per aggregate)
-│   ├── schemas/                    # Pydantic v1 DTOs (request/response contracts)
-│   ├── repositories/
-│   │   ├── interfaces/             # Protocol-based persistence contracts
-│   │   └── sqlalchemy/             # Concrete SQLAlchemy implementations
-│   ├── services/                   # Business logic, one class per aggregate + a few helpers
-│   ├── api/
-│   │   ├── deps.py                 # DI wiring (repositories → services), Bearer-JWT auth, require_permission()
-│   │   └── v1/                     # JSON API routers, one file per resource
-│   ├── web/
-│   │   ├── deps.py                 # Cookie-based auth, require_web_permission(), base_context()
-│   │   ├── routers/                # HTML/HTMX routers, one file per screen group
-│   │   ├── templates/              # Jinja2 templates (base + partials + per-screen)
-│   │   └── static/{css,js,img}/    # Bootstrap-based custom CSS, vanilla JS (app.js, table.js)
-│   ├── utils/                      # Pagination, Excel read/write, rotating Excel log, validators, datetime
-│   └── middleware/                 # Correlation-ID/access-log middleware, global exception handlers
-├── alembic/                        # Migration environment + versioned migrations
-├── scripts/                        # create_admin.py, seed_data.py (one-shot management scripts)
-├── deploy/                         # gunicorn_conf.py, apache.conf, systemd unit, backup/restore/startup/shutdown
-├── tests/                          # unit/{services,repositories}, integration/api (scaffolded, see Testing)
-├── logs/                           # Runtime: app.log, exports/, excel_logs/ (all git-ignored)
-├── requirements.txt / .env.example / alembic.ini
-├── Dockerfile / docker-compose.yml
-└── README.md / INSTALLATION.md / USER_GUIDE.md / DEVELOPER_GUIDE.md
-```
-
-**Naming conventions:** interfaces are prefixed `I` (`ISetupRepository`); SQLAlchemy implementations match the interface name minus the prefix (`SetupRepository`); every schema file matches its model's name; every service method that mutates state calls `AuditService.record(...)` before returning.
-
----
-
-## Security
-
-- **Transport**: TLS terminated at Apache; the app process only listens on a unix socket / localhost — see `deploy/apache.conf`. Access is restricted to the internal network via Apache's `Require ip` allow-list (no separate firewall script is shipped with this project; an OS-level firewall is still recommended as defense in depth but is left to your own infrastructure standards).
-- **AuthN**: JWT access + refresh token pair (`app/core/security.py`). API clients use `Authorization: Bearer <token>`; the browser uses HttpOnly, `SameSite=Strict`, `Secure` (in non-debug) cookies (`app/web/routers/auth_view.py`). Refresh tokens are tracked server-side (`refresh_tokens` table) and rotated on every use (single-use), so logout/deactivation revokes access immediately rather than waiting for token expiry.
-- **AuthZ**: every protected endpoint depends on `require_permission(code)` (API) or `require_web_permission(code)` (web), which checks the current user's role against the seeded `role_permissions` mapping — never a hardcoded `if role == "X"`. Record-level nuance (e.g. "a LEAD may only approve users in their own Group") is enforced inside the relevant service method, not the route.
-- **Passwords**: bcrypt via `passlib`, cost factor from `BCRYPT_ROUNDS`. Never logged, never returned in any response.
-- **Injection**: 100% SQLAlchemy query-builder access; zero raw string-concatenated SQL anywhere in the codebase.
-- **Input validation**: every write path validated by a Pydantic v1 schema before reaching the service layer (length limits, `EmailStr`, custom IP/hostname regex validators in `app/utils/validators.py`).
-- **Path traversal**: `DeveloperLogsService.resolve_download_path()` resolves and verifies every requested log file stays within `EXCEL_LOG_DIR` before allowing a download.
-- **CORS**: explicit allow-list only (`CORS_ALLOWED_ORIGINS`), never `*` in production.
-- **Secrets**: `SECRET_KEY`, DB credentials, SMTP credentials — environment variables only, never committed. Production secrets live in `/etc/reservation-system/.env`, root-owned, mode `600`.
-- **Audit trail**: `AuditLog` is insert-only by construction — `AuditLogRepository` exposes no `update`/`delete` method at all.
-
----
-
-## RBAC
-
-Roles (`app/core/constants.py::RoleName`), ascending privilege: `USER < DEVELOPER < LEAD < DEVELOPER_LEAD < OWNER`.
-
-Permission matrix (`DEFAULT_ROLE_PERMISSIONS`, seeded by `app/db/init_db.py::seed_roles_and_permissions`, idempotent):
-
-| Permission code | USER | DEVELOPER | LEAD | DEVELOPER_LEAD | OWNER |
-|---|:---:|:---:|:---:|:---:|:---:|
-| `user:view` | | | | ✅ | ✅ |
-| `user:manage` | | | | ✅ | ✅ |
-| `user:approve` | | | ✅ | ✅ | ✅ |
-| `product:view` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `product:manage` | | | | ✅ | ✅ |
-| `group:view` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `group:manage` | | | ✅ | ✅ | ✅ |
-| `reservation:view` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `reservation:create` | | ✅ | ✅ | ✅ | ✅ |
-| `reservation:cancel_own` | | ✅ | ✅ | ✅ | ✅ |
-| `reservation:cancel_any` | | | ✅ | ✅ | ✅ |
-| `swap:view` | | ✅ | ✅ | ✅ | ✅ |
-| `swap:request` | | ✅ | ✅ | ✅ | ✅ |
-| `swap:approve` | | | ✅ | ✅ | ✅ |
-| `borrow:view` | | | ✅ | ✅ | ✅ |
-| `borrow:request` | | | ✅ | ✅ | ✅ |
-| `borrow:approve` | | | ✅ | ✅ | ✅ |
-| `borrow:return` | | | ✅ | ✅ | ✅ |
-| `announcement:view` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `announcement:manage` | | | | ✅ | ✅ |
-| `audit:view` | | | | ✅ | ✅ |
-| `logs:view` | | | ✅ | ✅ | ✅ |
-| `export:run` | | ✅ | ✅ | ✅ | ✅ |
-| `import:run` | | | ✅ | ✅ | ✅ |
-
-**Adding a new permission:** add the constant to `PermissionCode`, add it to the relevant role(s) in `DEFAULT_ROLE_PERMISSIONS`, re-run `python -m scripts.create_admin` (idempotent — adds missing permissions/mappings without duplicating). No code path should ever check `user.role.name == "..."` directly for authorization; always go through `RoleLookupService.role_has_permission()` / `require_permission()` / `require_web_permission()`.
-
-**Scoped (record-level) RBAC example:** `UserService.process_approval()` — a LEAD may only approve a PENDING user whose `group_id` matches their own; DEVELOPER_LEAD/OWNER bypass this scope. See `_scope_role_names()` in `app/services/user_service.py`.
-
----
-
-## API Reference
-
-Full interactive reference: **Swagger UI at `/docs`**, ReDoc at `/redoc`, raw OpenAPI JSON at `/openapi.json` (all served automatically by FastAPI from the route/schema definitions — always current, prefer it over a hand-maintained list for exact request/response shapes).
-
-Base path: `/api/v1`. All endpoints except `/auth/register` and `/auth/login`/`/refresh` require `Authorization: Bearer <access_token>`.
-
-| Resource | Endpoints |
+| Path | Content |
 |---|---|
-| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/change-password` |
-| Users | `GET/POST /users`, `GET/PATCH/DELETE /users/{id}`, `GET /users/me`, `POST /users/{id}/approval` |
-| Products | `GET/POST /products`, `GET/PATCH/DELETE /products/{id}` |
-| Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/{id}` |
-| Setups | `GET/POST /setups`, `GET/PATCH/DELETE /setups/{id}` |
-| Reservations | `GET/POST /reservations`, `GET /reservations/{id}`, `PATCH /reservations/{id}/cancel` |
-| Swaps | `GET/POST /swaps`, `GET /swaps/{id}`, `PATCH /swaps/{id}/approve\|reject\|cancel` |
-| Announcements | `GET/POST /announcements`, `GET/PATCH/DELETE /announcements/{id}` |
-| Audit Logs | `GET /audit-logs` (read-only) |
-| Exports | `POST /exports/setups`, `POST /exports/setups/template`, `POST /exports/reservations` |
-| Imports | `POST /imports/setups` (multipart) |
-| Developer Logs | `GET /dev-logs/tree`, `GET /dev-logs/download?path=...` |
+| `app/main.py` | App factory, middleware, router registration, scheduler start |
+| `app/core/` | `config.py` (settings), `constants.py` (roles, permissions, statuses), `exceptions.py`, `security.py`, logging |
+| `app/models/` | SQLAlchemy models; `baseline_capture.py` registers baseline mapper events |
+| `app/schemas/` | Pydantic request/response models |
+| `app/repositories/` | `interfaces/` (Protocols) and `sqlalchemy/` implementations |
+| `app/services/` | Business logic (swap, borrow, reservation, routing, import/export, notifications, scheduler…) |
+| `app/api/v1/` | JSON API routers; `app/api/deps.py` DI |
+| `app/web/` | `routers/` (HTML/HTMX views), `templates/`, `static/` (`js/table.js`, `css/styles.css`), `deps.py` |
+| `app/middleware/` | Error handler (`AppError` → JSON/HTML), request logging |
+| `alembic/versions/` | Migrations `0001`–`0013` |
+| `scripts/` | `create_admin.py`, `seed_data.py` |
+| `deploy/` | Service, nginx/apache, gunicorn, backup/restore scripts |
+| `tests/` | Pytest suite (see §15) |
+| `docs/` | Sphinx site (see §16) |
 
-**Response envelopes** (`app/schemas/common.py`):
-```json
-// Paginated list
-{"items": [...], "page": 1, "page_size": 25, "total_items": 142, "total_pages": 6}
+## 3. Authentication and RBAC
 
-// Error (any 4xx/5xx)
-{"error": {"code": "RESERVATION_CONFLICT", "message": "...", "details": {...}}}
-```
-`error.code` is stable and machine-branchable (see `app/core/exceptions.py` for the full hierarchy) — automation should match on `code`, not `message`.
+- Register → user is `PENDING`; a Lead/above approves (`UserStatus`: PENDING, APPROVED, REJECTED, DISABLED). Login issues a JWT access token + rotating refresh token (API) or a cookie session (web). Passwords use bcrypt. Password reset uses single-use tokens (`password_reset_tokens`).
+- Roles (`RoleName`): `BOT` < `USER` < `LEAD` < `MANAGER` < `OWNER`. Legacy Python attribute names (`USER`, `DEVELOPER`, `DEVELOPER_LEAD`) map to the stored strings BOT/USER/MANAGER — always compare with `RoleName.*` constants, not string literals.
+- Permissions are rows (`permissions`, `role_permissions`) seeded from `constants.py`. Enforce with `require_permission(PermissionCode.X)` (API) and `require_web_permission` (web). Templates read `current_user_permissions`.
+- Borrow permissions (`borrow:view/request/approve/return`) belong to LEAD, MANAGER, OWNER; `BorrowService` additionally checks the role and group membership.
+- Fine-grained rules live in services (owner-only cancel, routed-approver checks, group access).
 
----
+## 4. Data model
 
-## Future Automation
+Core: `users`, `roles`, `permissions`, `groups`, `user_groups`, `products`, `setups`, `reservations`, `announcements`, `audit_logs`, `export_logs`, `excel_transaction_logs`, `refresh_tokens`, `password_reset_tokens`.
 
-The system was designed from the ground up to be **directly queryable by external automation** against the SQL database, independent of the API:
+Template/custom data: `product_template_columns` (per-product column definitions), `setup_custom_field_values` (EAV current values).
 
-- **Stable, typed columns** — no automation-hostile JSON blobs for core fields; `setups.status`, `reservations.status`, etc. are plain indexed strings with `CHECK` constraints, documented in `alembic/versions/0001_initial_schema.py`.
-- **`setups.status`** is the single fast filter for "what's free right now" (`WHERE status = 'AVAILABLE'`) without needing to join `reservations`.
-- **`reservations`** is the append-style source of truth for who-had-what-when; `SWAPPED`/`CANCELLED`/`COMPLETED` rows are retained, never deleted, so a full utilization history is directly queryable.
-- **`audit_logs`** gives automation (or a compliance pipeline) a single append-only table to tail for every state change in the system, with `entity_type`/`entity_id`/`action` columns built for filtering.
-- **`export_logs` / `excel_transaction_logs`** plus the rotating Excel files under `EXCEL_LOG_DIR` give a parallel, portable (non-DB) audit trail specifically for bulk import/export operations — useful for handing off to systems that consume Excel rather than SQL.
-- **Read-only DB users**: for production, create a dedicated PostgreSQL role with `SELECT`-only grants for automation/reporting consumers, distinct from the application's read-write role — this is a deployment-time DB administration step, not something the application enforces itself.
-- **API-first automation**: for anything beyond read-only reporting (creating reservations, approving swaps, etc.), prefer the JSON API over direct writes — the API enforces the same business rules (overlap checks, RBAC, audit logging) that direct SQL writes would bypass entirely.
+Workflow tables: `swap_requests`, `borrow_requests`, `setup_access_grants` (one row per approved borrow), `group_hierarchy_edges` (parent, child, `scope` = SWAP | BORROW | BOTH).
 
----
+Original/Current hardware: `setup_hardware_baseline` (one row per setup, the ten fixed hardware fields), `setup_custom_field_baselines` (setup, template column, value), `hardware_change_logs` (per-field ledger: old/new value, `source` SWAP/BORROW/…, `source_request_id`, user).
 
-## Developer Standards
+## 5. Original vs Current hardware model
 
-- **Python 3.8 compatibility is non-negotiable**: `typing.List/Dict/Optional/Union`, never builtin generics (`list[str]`); no `match`/`case`; no walrus-adjacent 3.9+-only stdlib APIs.
-- **Pydantic v1 syntax only** (`class Config: orm_mode = True`, `@validator`, not v2's `model_config`/`field_validator`).
-- **Clean architecture boundaries are enforced by import direction**: if you find a router importing a repository, or a repository importing a service, that's a layering violation — fix it, don't work around it.
-- **Every new resource gets**: a model (`app/models/`), a schema (`app/schemas/`), a repository interface + SQLAlchemy impl (`app/repositories/`), a service (`app/services/`), DI wiring in `app/api/deps.py`, an API router (`app/api/v1/`), and (if user-facing) a web router + templates (`app/web/`). Register new models in `app/models/__init__.py` so Alembic and relationship resolution see them.
-- **Every mutating service method** calls `AuditService.record(...)` with `action`, `entity_type`, `entity_id`, and before/after snapshots where meaningful.
-- **Never bypass the service layer** from a router — routers only orchestrate: parse input (FastAPI/Pydantic does this), call one service method, return its result.
+- **Current/effective** = the live values: fixed columns on `setups` and rows in `setup_custom_field_values`.
+- **Original/baseline** = insert-only snapshot. `app/models/baseline_capture.py` (SQLAlchemy `after_insert` events) writes the baseline when a `Setup` or the first `SetupCustomFieldValue` is inserted, so every creation path (API, import, seed, tests) is covered. Baselines are never updated by Swap/Borrow.
+- **Re-baseline** happens only in Setup Edit (web form and `PATCH /api/v1/setups/{id}`): `HardwareStateService.rebaseline_edited_fields` copies the *changed* fields' new values into the baseline. Excel import does not re-baseline.
+- `HardwareStateService.changed_fields(setups)` compares Original vs Current generically (fixed field names come from `BASELINE_FIELD_NAMES`, derived from the baseline table; custom fields from template columns; None/blank/whitespace are equal). `compare()` and `history()` feed the *Original vs Current* dialog. `_table_body.html` adds class `rms-cell-changed` to each changed cell — no per-field logic.
+- Migration `0013` backfills baselines from current values; history before that cannot be reconstructed.
 
-## Coding Guidelines
+## 6. Reservation
 
-- **PEP 8**, type hints on every function signature, docstrings on every public class/function explaining *why*, not just *what*, where the reasoning isn't obvious from the name.
-- **SOLID**: one service per aggregate (SRP); extend via new classes/strategies, not by branching inside existing ones (OCP); repository implementations must be substitutable behind their interface (LSP); prefer several narrow repository interfaces over one fat one where read/write concerns diverge (ISP); services depend on interfaces, not concrete SQLAlchemy classes (DIP).
-- **No placeholders, no `TODO`s, no partial implementations** — if a feature is started, finish the full path (model → schema → repo → service → API/web) before moving on.
-- **Exceptions**: raise a specific subclass of `app.core.exceptions.AppError` (not a bare `Exception` or FastAPI's `HTTPException`) from services, so business logic stays framework-agnostic and testable without FastAPI in the loop.
-- **Logging**: use `app.core.logging_config.get_logger(__name__)`, never `print()`. Application logs are for operators; the `AuditLog` table is for compliance/history — don't conflate the two (see [Architecture](#architecture)).
-- **Formatting**: keep lines reasonably short, prefer `.format()`-style or f-strings consistently within a file (this codebase favors `.format()` in service/repository code — match the surrounding file), avoid unnecessary abbreviations in names.
+`ReservationService`: create (setup must exist and not be MAINTENANCE/RETIRED; overlap with any ACTIVE reservation raises `ReservationConflictError` — checked in the service, not via a DB constraint), cancel (owner or `reservation:cancel_any`), `sweep_expired_reservations` (ACTIVE → COMPLETED, setup → AVAILABLE). `Reservation.remarks` stores the reason; `announcement_channels` trigger `NotificationService.broadcast_reservation_event`. Statuses: ACTIVE, CANCELLED, COMPLETED. `RESERVATION_MIN_LEAD_MINUTES` is defined in settings but not currently enforced.
 
----
+## 7. Swap
 
-## Testing
+`SwapService` (`swap_requests`). Statuses: PENDING → COMPLETED | REJECTED | CANCELLED | EXPIRED.
 
-Directories are scaffolded (`tests/unit/{services,repositories}`, `tests/integration/api`) with `__init__.py` markers but no test cases are checked in yet — write tests as you add features, following this structure:
+- **Create:** setups must differ and not be MAINTENANCE/RETIRED; `_assert_has_setup_access` on **both** setups (group access; Owner always; ungrouped setup open; a setup lent out via an active grant is held by the borrower group, not the owner group); requested columns must exist on both setups (`swappable_columns`: fixed fields + custom columns present on both products' templates); routed approver emails are snapshotted; optional reason/start/end/announcement.
+- **Approve:** `_assert_can_approve` (routed approvers via `ApprovalRoutingService.resolve_approvers_for_group(current_setup.group_id)`; Owner override; empty routing falls back to the flat `swap:approve` permission). Missing baselines are captured first, values exchanged in one transaction, one `hardware_change_logs` row per changed field per setup, audit entries written. Original is untouched.
+- **Reject/Cancel** change nothing. Requester cancels own PENDING swaps only.
+- No swap-mapping functionality exists (removed; `SwapRequest.setup_id` is a legacy unused column).
+- `SWAP_REQUIRE_SAME_PRODUCT` exists in settings but is not enforced; cross-product swaps work for common columns.
 
-- **`tests/unit/services/`**: instantiate a service with **fake repository implementations** (satisfying the relevant `Protocol` in `app/repositories/interfaces/`) — no database, no FastAPI. This is the primary place to test business rules (overlap validation, swap-mapping validation, RBAC scoping, state machines).
-- **`tests/unit/repositories/`**: test SQLAlchemy repositories against a real **in-memory SQLite** engine (`sqlite:///:memory:`) with `Base.metadata.create_all()` — verifies query correctness without needing the full app.
-- **`tests/integration/api/`**: use FastAPI's `TestClient` against the full app (override `get_db` to point at a temporary SQLite file or in-memory DB) to test routing, DI wiring, and the request/response contract end-to-end.
+## 8. Borrow
 
-Suggested tooling (not yet pinned in `requirements.txt` — add as dev dependencies):
+`BorrowService` (`borrow_requests`, `setup_access_grants`). Statuses: PENDING → COMPLETED (approved, currently borrowed) → RETURNED; PENDING → REJECTED | CANCELLED | EXPIRED.
+
+- **Create:** requester role LEAD/MANAGER/OWNER with a `group_id`; `source_lead_id` must be an active approved Lead/Manager; setup must belong to that lead's group and not to the requester's; not MAINTENANCE/RETIRED; no other PENDING/COMPLETED borrow and no active grant on the setup; optional `hardware_field_name` (fixed field or product custom column; informational); `end_time` must be in the future.
+- **Routing:** `resolve_borrow_approvers(source_group_id)` — the source group's lead(s), its parent's leads and sibling groups' leads under that parent, using BORROW/BOTH edges (example: E selects lead d → b, d, f, g). Any ONE approves; requester cannot; Owner can; empty routing falls back to `borrow:approve`.
+- **Approve:** creates one active `SetupAccessGrant(granted_to_group_id=borrower)`, status COMPLETED. `Setup.group_id` and hardware values are never modified; the effective holder is the active grant's group. `SetupRepository.list` (group filter) and `get_active_grant_group_ids` use this.
+- **Return:** requester, lead of the borrowing group, routed source approver or Owner; closes the grant (`is_active=false`, `returned_at`), status RETURNED, emails requester + source leads, announces on the chosen channels.
+- **Expiry:** PENDING requests past `end_time` become EXPIRED lazily (`list`/`approve`) and via the `borrow_sweep` scheduler job. Approved borrows are not auto-returned; the UI shows *Overdue*.
+
+## 9. Approval routing
+
+`ApprovalRoutingService` reads `group_hierarchy_edges`; nothing is hardcoded. Swap routing = requester-setup group plus all ancestors (SWAP/BOTH edges); Borrow routing as in §8. Approver roles considered: LEAD and MANAGER (users matched by primary `group_id`). Manage edges with `GET/POST/DELETE /api/v1/group-hierarchy` (`group:manage`); there is no web screen for it.
+
+## 10. Email and announcement flow
+
+`NotificationService.broadcast_reservation_event(channels, message, setup, acting_user)` supports `WALL` (creates a 7-day announcement), `MAIL_LEADS`, `MAIL_GROUP`, `MAIL_ALL`. Swap/Borrow additionally call `email_direct` for routed approvers/requester regardless of channels. `EmailService.send_email` sends via SMTP only when `SMTP_ENABLED=true`; otherwise it logs the message. The announcement sweep deactivates expired announcements.
+
+## 11. Excel import/export
+
+`ImportService` upserts setups (key: IP or hostname); required headers `ip_address`, `hostname`, `location`; any row error rejects the whole import; product-scoped import detects unknown columns (`detect-columns`) and either adds them to the template (`accept_new_columns=true`) or rejects. Parsing: `app/utils/excel_reader.py` (`SETUP_IMPORT_COLUMNS`); writing: `excel_writer.py`. Each import/export writes an `ExcelTransactionLog`/`ExportLog` row and rotating Excel log files. Creating setups through import fires the baseline hook; updating them does not change baselines.
+
+## 12. Audit and history
+
+`AuditService.record(user_id, action, entity_type, entity_id, old_value, new_value)` → `audit_logs` (viewable at **Logs**, `GET /api/v1/audit-logs`). Domain history: `swap_requests`, `borrow_requests`, `setup_access_grants`, `hardware_change_logs`.
+
+## 13. Web layer
+
+Full pages extend `base.html`; HTMX partials (`_*.html`) are swapped into targets and signal toasts through `HX-Trigger` (`app/web/htmx_utils.py`). Key routers: `setups_view` (table, reserve/swap/unreserve dialogs, hardware compare, edit), `borrows_view`, `approvals_view` (unified Swap+Borrow approvals with least-visibility filter), `swap_approvals_view` (older swap-only page), `products_view`, `users_view`, `groups_view`, `announcements_view`, `audit_view`, `docs_view` (serves `docs/_build/html` at `/documentation`).
+
+## 14. Configuration and migrations
+
+Settings are read from environment/`.env` (`app/core/config.py`): `APP_ENV`, `SECRET_KEY`, token lifetimes, `DATABASE_URL`, log/export/Excel-log directories, `SMTP_*`, `CORS_ALLOWED_ORIGINS`, `SEED_ADMIN_*`, `ENABLE_SCHEDULER`, `RESERVATION_SWEEP_INTERVAL_MINUTES` (also used by the borrow sweep), `ANNOUNCEMENT_SWEEP_INTERVAL_MINUTES`. Never commit `.env`; set a real `SECRET_KEY`.
+
+Migrations: `alembic upgrade head` (head `0013`), `alembic downgrade -1`, `alembic revision -m "…"`. Keep changes additive/backward compatible.
+
+## 15. Local setup, workflow, testing
+
 ```bash
-pip install pytest pytest-cov httpx
-pytest --cov=app tests/
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env      # set SECRET_KEY, SEED_ADMIN_PASSWORD
+alembic upgrade head
+python -m scripts.create_admin
+uvicorn app.main:app --reload
+pytest tests/ -v
 ```
 
-**Priority test targets** given the business-rule density in this codebase: `ReservationService._assert_no_overlap`, `SwapService.create_mapping`/`approve_mapping` (node-uniqueness/availability validation), `UserService.process_approval` (Group-scoped Lead approval), `ImportService` (all-or-nothing commit + row-level error reporting).
+Tests: `tests/test_backend.py`, `test_business_logic.py`, `test_frontend.py`, `test_integration.py`, `tests/unit/models/test_phase1_data_model.py`, plus `test_phase4_completion.py`, `test_phase5_borrow.py`, `test_phase6_ui.py`. Fixtures (`conftest.py`) provide users per role, `make_user`, `make_setup`, `product`, `auth_headers`, `web_login`. Workflow: change service + tests together, keep routers thin, add a migration for any schema change, run the full suite.
 
----
+## 16. Documentation build
 
-## Common Issues
+Sphinx sources are in `docs/` and include the root Markdown files (no duplication). `pip install -r docs/requirements.txt && sphinx-build -b html docs docs/_build/html`; the app serves the result at `/documentation`.
 
-| Symptom | Cause / Fix |
-|---|---|
-| `ImportError: cannot import name 'X' from 'app.services...'` after adding a service | Check for a circular import — services should only import other services that sit strictly "below" them in the dependency graph (e.g. `ReservationService` may depend on `NotificationService`, but not vice versa). |
-| New model's table not created by `Base.metadata.create_all()` or missing from Alembic autogenerate | Model class not imported in `app/models/__init__.py` — SQLAlchemy only registers classes that have been imported somewhere. |
-| `422 Unprocessable Entity` on a request that looks correct | Check the Pydantic schema's field constraints (`Field(..., max_length=...)`, custom `@validator`) — the error envelope's `details.errors` lists the exact field and message. |
-| A new permission doesn't take effect for existing users | Re-run `python -m scripts.create_admin` (idempotently adds new permissions to `DEFAULT_ROLE_PERMISSIONS` roles) — existing `User` rows don't need touching since permissions are resolved via `role.permissions` at request time, not cached on the user. |
-| HTMX partial renders raw Jinja instead of processed HTML | Missing `{% include %}` context propagation — Jinja `include` shares the parent context by default; if you switched to `{% import %}` or a macro call, pass variables explicitly. |
-| Web page shows a JSON error instead of an HTML error page | The exception raised wasn't `RedirectToLogin`/`ForbiddenWebError`/`StarletteHTTPException` — web routers must let auth/permission failures raise those specific types (see `app/web/deps.py`), not a generic `AppError`, for `main.py`'s handlers to route to an HTML response. |
+## 17. Debugging and troubleshooting
 
-## FAQ
+- Logs: `LOG_DIR` (default `./logs`); **Developer Logs** page in the UI; set `LOG_LEVEL=DEBUG`, `DATABASE_ECHO=true` for SQL.
+- Emails "not sent": `SMTP_ENABLED` is false — see the log line *Email (SMTP disabled, not sent)*.
+- No highlight/baseline: check the row exists in `setup_hardware_baseline`; rows created before migration `0013` are backfilled by it.
+- Approver can't approve: check `group_hierarchy_edges` scope (SWAP vs BORROW vs BOTH) and that the user's role is LEAD/MANAGER with the right primary group.
+- Scheduler jobs not running: `ENABLE_SCHEDULER=false` or running multiple workers (use one scheduler process).
 
-**Q: Why Pydantic v1 instead of v2?**
-A: The project targets Python 3.8; Pydantic v2's compiled core (pydantic-core) and API changes are optimized for 3.9+ workflows, and v1 remains fully supported and stable for this codebase's needs.
+## 18. Extension points
 
-**Q: Why isn't `Setup.status` just computed from `reservations` on every read?**
-A: Automation needs a fast, single-column filter (`WHERE status = 'AVAILABLE'`) without a join; the service layer keeps it in sync transactionally instead, trading a small amount of write-path complexity for read-path speed and automation-friendliness.
+- New workflow: model + migration → repository interface/impl → service → API router (`app/api/v1`) → web router → register in `app/main.py`/`router.py` and `deps.py`.
+- New hardware field: add the column to `setups` and `setup_hardware_baseline` (baseline fields are derived from the table), plus schemas/import/export headers; comparison and highlighting need no change.
+- New notification channel: extend `AnnouncementChannel` and `NotificationService.broadcast_reservation_event`.
+- New approval domain: add an `ApprovalHierarchyScope` value and a resolver in `ApprovalRoutingService`.
 
-**Q: Can I run multiple Gunicorn workers against SQLite in production?**
-A: You can, but SQLite serializes writers at the file level, so heavy concurrent write load (many simultaneous reservations) will see lock contention. For production traffic beyond a small team, migrate to PostgreSQL (see INSTALLATION.md §Database) — no code changes required.
+## 19. Known limitations
 
-**Q: How do I add a new Excel export type?**
-A: Add a header list + a row-builder in `ExportService`, a new `ExportType` constant, a new endpoint in `app/api/v1/exports.py` (and optionally a web route), following the existing `export_setups`/`export_reservations` pattern.
-
-**Q: Where do I change the swap-mapping validation rules?**
-A: `SwapService.create_mapping()` — the docstring enumerates every rule currently enforced (distinct reservations, distinct targets, in-cycle vs. out-of-cycle availability). Add new rules as additional `if` checks raising `SwapMappingValidationError` with a specific message.
-
-**Q: Is there a CLI besides the two `scripts/`?**
-A: Not currently. `scripts/create_admin.py` and `scripts/seed_data.py` are the only management scripts; anything else should go through the API or a new script following the same `sys.path.insert` + explicit `SessionLocal()` pattern.
+- Runtime behaviour of the Swap/Borrow/Approvals/baseline features has been reviewed and statically checked but must be confirmed by running the test suite and the manual plan in `TESTING.md`.
+- Borrow is setup-level access with manual return; there is no auto-return.
+- `RESERVATION_MIN_LEAD_MINUTES` and `SWAP_REQUIRE_SAME_PRODUCT` settings are not enforced.
+- Swap candidate list is capped at 500 setups; Approvals lists 200 items per tab.
+- Deleting a template column that already has values is blocked by an existing foreign key.
+- The older `/admin/swap-approvals` page coexists with `/approvals`.
+- Hierarchy edges can only be managed via the API.

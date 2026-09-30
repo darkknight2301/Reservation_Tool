@@ -172,10 +172,14 @@ def test_approvals_pending_shows_swap_and_borrow_and_only_routed_can_act(client,
                        headers=auth_headers(member_e))
     assert swap.status_code == 201
 
-    web_login(w.lead["b"])      # routed borrow approver
+    web_login(w.lead["b"])      # routed borrow approver: sees the borrow and may act on it
     html = client.get("/approvals").text
-    assert "Pending Approvals" in html and "BORROW" in html and "SWAP" in html
+    assert "Pending Approvals" in html and "BORROW" in html
     assert "/approvals/borrow/" in html and "/approve" in html
+    assert "SWAP" not in html.split("Pending Approvals")[1], "swap of an unrelated group must not be visible to an unrelated lead"
+
+    web_login(w.lead["e"])      # lead of the swap's group sees the swap
+    assert "SWAP" in client.get("/approvals/content", params={"tab": "pending"}).text
 
     web_login(w.lead["e"])      # the borrow's requester: can cancel, cannot approve their own
     html = client.get("/approvals/content", params={"tab": "pending"}).text
@@ -212,3 +216,26 @@ def test_developers_do_not_see_borrow_items_on_approvals(client, web_login, auth
     web_login(w.make_user(role_name=RoleName.DEVELOPER))
     html = client.get("/approvals").text
     assert "BORROW" not in html.replace("Borrow / Return", "")
+
+
+def test_swap_columns_endpoint_does_not_reveal_columns_of_inaccessible_setups(client, web_login, world):
+    w = world
+    outsider = w.make_user(role_name=RoleName.DEVELOPER, group_id=w.g["e"].id)
+    web_login(outsider)
+    # setup_d belongs to group d (not the outsider's group): no columns may be offered for it.
+    html = client.get("/setups/swap-dialog/columns", params={"current_setup_id": w.setup_e.id, "requested_setup_id": w.setup_d.id}).text
+    assert 'value="ssd"' not in html
+
+
+def test_approvals_visibility_is_limited_to_related_users(client, web_login, auth_headers, world):
+    w = world
+    _borrow(client, auth_headers, w)                      # e borrows from d; b routed
+    unrelated_group = Group(name="unrelated-{0}".format(id(w.db)))
+    w.db.add(unrelated_group)
+    w.db.commit()
+    stranger = w.make_user(role_name=RoleName.LEAD, group_id=unrelated_group.id)
+    web_login(stranger)
+    assert "BORROW" not in client.get("/approvals/content", params={"tab": "pending"}).text
+    manager = w.make_user(role_name=RoleName.DEVELOPER_LEAD, group_id=unrelated_group.id)
+    web_login(manager)
+    assert "BORROW" in client.get("/approvals/content", params={"tab": "pending"}).text

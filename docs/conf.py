@@ -1,8 +1,8 @@
 """Sphinx configuration for the Reservation Management System documentation.
 
-Lightweight setup: MyST turns the existing root-level USER_GUIDE.md and
-API_GUIDE.md into the actual documentation source (via the `{include}`
-directive in docs/user_guide.md and docs/api_guide.md), so nothing here
+Lightweight setup: MyST turns the root-level USER_GUIDE.md, DEVELOPER_GUIDE.md,
+TESTING.md, API_GUIDE.md and INSTALLATION.md into the documentation source
+(via the `{include}` directive in the matching docs/*.md stub), so nothing here
 duplicates their content -- this file only wires up the site around them.
 """
 
@@ -33,6 +33,10 @@ myst_enable_extensions = [
     "colon_fence",
 ]
 myst_heading_anchors = 3
+
+# Included root files contain relative links to sibling .md files; those are
+# plain repository links, so don't warn about them in the site build.
+suppress_warnings = ["myst.xref_missing", "myst.header"]
 
 # -- HTML output --------------------------------------------------------------
 

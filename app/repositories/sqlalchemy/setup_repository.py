@@ -60,12 +60,14 @@ class SetupRepository:
                 .filter(SetupAccessGrant.setup_id == Setup.id, SetupAccessGrant.is_active.is_(True))
                 .exists()
             )
-            granted_to_group = (
-                self._db.query(SetupAccessGrant.setup_id)
+            granted_setup_ids = [
+                row[0]
+                for row in self._db.query(SetupAccessGrant.setup_id)
                 .filter(SetupAccessGrant.granted_to_group_id == filters.group_id, SetupAccessGrant.is_active.is_(True))
-            )
+                .all()
+            ]
             query = query.filter(
-                or_(and_(Setup.group_id == filters.group_id, ~any_active_grant), Setup.id.in_(granted_to_group))
+                or_(and_(Setup.group_id == filters.group_id, ~any_active_grant), Setup.id.in_(granted_setup_ids))
             )
         if filters.status:
             query = query.filter(Setup.status == filters.status)

@@ -9,8 +9,10 @@ Python 3.8 compatible.
 | Document | Purpose |
 |---|---|
 | [INSTALLATION.md](INSTALLATION.md) | Linux deployment, Python setup, environment variables, database/Alembic, running the server, creating the admin, backup/restore |
-| [USER_GUIDE.md](USER_GUIDE.md) | Managing products/users, reservation workflow, swap workflow, announcements, logs, Excel logs |
-| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | Architecture, folder structure, security/RBAC, API reference, future automation, coding standards, testing, common issues, FAQ |
+| [USER_GUIDE.md](USER_GUIDE.md) | Web UI guide: login, roles, setups table, Reserve/Unreserve, Swap, Borrow/Return, approvals, Original vs Current hardware, announcements, Excel, audit, troubleshooting, FAQ |
+| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | Architecture, structure, data model, RBAC, Reservation/Swap/Borrow internals, approval routing, configuration, migrations, extension points, known limitations |
+| [TESTING.md](TESTING.md) | Manual Web UI test plan (test IDs, preconditions, steps, expected results, Pass/Fail) |
+| [API_GUIDE.md](API_GUIDE.md) | REST API reference |
 
 ## Quick start
 
@@ -27,7 +29,7 @@ Visit `http://localhost:8000/login` (web UI) or `http://localhost:8000/docs` (AP
 
 ## Roles
 
-`USER` < `DEVELOPER` < `LEAD` < `DEVELOPER_LEAD` < `OWNER` — see DEVELOPER_GUIDE.md §RBAC for the full permission matrix.
+`BOT` < `USER` < `LEAD` < `MANAGER` < `OWNER` — see DEVELOPER_GUIDE.md (Authentication and RBAC) and USER_GUIDE.md (Roles and permissions).
 
 ## Dynamic Product Templates
 
@@ -50,8 +52,8 @@ Product-scoped export: `POST /api/v1/exports/setups/product/{id}`.
 
 ## Documentation
 
-- `USER_GUIDE.md` / `API_GUIDE.md` — source of truth, read directly or via the Sphinx site below.
-- Sphinx site (built from those two files, nothing duplicated): `pip install -r docs/requirements.txt && sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
+- The root Markdown guides are the source of truth, read directly or via the Sphinx site below.
+- Sphinx site (built from those files, nothing duplicated): `pip install -r docs/requirements.txt && sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
 
 ## License / Ownership
 

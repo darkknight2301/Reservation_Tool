@@ -87,12 +87,6 @@ class InvalidStateTransitionError(ConflictError):
     error_code = "INVALID_STATE_TRANSITION"
 
 
-class SwapMappingValidationError(ValidationAppError):
-    """Raised when a multi-node swap mapping fails the node-uniqueness/availability rules."""
-
-    error_code = "SWAP_MAPPING_INVALID"
-
-
 class ImportValidationError(ValidationAppError):
     """Raised when an uploaded Excel file fails structural or row validation."""
 

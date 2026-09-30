@@ -376,8 +376,8 @@ def test_swap_approval_exchanges_values_and_logs_hardware_change_history(
 # ---------------------------------------------------------------------
 #
 # These test the routing ALGORITHM directly against ApprovalRoutingService,
-# independent of any BorrowService (which does not exist yet -- see
-# IMPLEMENTATION_PROGRESS.md, still scheduled). Business rule 8 ("hierarchy
+# independent of BorrowService (BorrowService now exists, Phase 5 -- see
+# IMPLEMENTATION_PROGRESS.md). Business rule 8 ("hierarchy
 # affects routing, not general access") and "Keep Swap and Borrow approval
 # logic independent" are both exercised here.
 

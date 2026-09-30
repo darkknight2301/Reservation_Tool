@@ -1,3 +1,80 @@
+CURRENT_PHASE: Phase 8 (documentation) -- complete. No further phase started.
+
+COMPLETED:
+  - USER_GUIDE.md rewritten from the actual templates/routes (labels, buttons, fields, roles verified against constants.py and the navbar/template sources).
+  - DEVELOPER_GUIDE.md rewritten from the implemented code (architecture, structure, data model, Original/Current model, Reservation/Swap/Borrow, routing, email flow, import/export, audit, config, migrations, setup, extension points, known limitations).
+  - TESTING.md rewritten as a manual Web UI plan: 92 tests (ID, objective, preconditions, steps, expected result, Pass/Fail) across login/RBAC, products/templates, Excel, reservation, unreserve, swap, approval, required columns, highlighting, borrow, any-one approval, return, cross-group/routing, announcements/email, audit, negative, time/boundary, regression.
+  - API_GUIDE.md updated: swap section rewritten (no reservation, group access, no swap-mapping), Borrow and Group-hierarchy sections and quick-reference rows added, Setups PATCH re-baseline note, workflow examples corrected.
+  - README.md documentation table and role names refreshed.
+  - Documented as-found facts: RESERVATION_MIN_LEAD_MINUTES and SWAP_REQUIRE_SAME_PRODUCT settings exist but are not enforced; two nav items are both labelled "Approvals"; Lead has Developer Logs but not Logs (audit).
+FILES_CREATED: docs/developer_guide.md, docs/testing.md, docs/installation.md (one-line MyST include stubs).
+FILES_MODIFIED: USER_GUIDE.md, DEVELOPER_GUIDE.md, TESTING.md, API_GUIDE.md, README.md, docs/index.md (toctree: user, developer, testing, API, installation), docs/conf.py (docstring, suppress_warnings for relative links in included files), IMPLEMENTATION_PROGRESS.md.
+DOCUMENTATION_CHANGES: see COMPLETED. No application code, tests, templates, migrations or business logic were changed in this phase.
+SPHINX_BUILD_STATUS: NOT BUILT. sphinx / myst-parser are not installed and cannot be installed here (no network). Existing Sphinx setup was extended, not replaced (docs/conf.py, index.md, user_guide.md, api_guide.md, requirements.txt kept).
+  Checked instead: every toctree page exists and each include target resolves; every root doc has balanced code fences, a single H1, no heading-level skips and consistent table columns; conf.py compiles; UI labels quoted in the docs were verified to exist in the templates.
+  To build: `pip install -r docs/requirements.txt && sphinx-build -b html docs docs/_build/html` (served at /documentation by the app). Fix any warnings it reports and tell me.
+TEST_STATUS: Automated test suite still NOT RUN (dependencies cannot be installed here; unchanged since Phase 7). Manual UI tests in TESTING.md have not been executed.
+KNOWN_ISSUES:
+  - Everything from Phases 4-7 is unverified at runtime until pytest, alembic and the TESTING.md plan are run.
+  - The Documentation menu in the top bar links only to User Guide and API Guide (template unchanged this phase); Developer Guide, Testing and Installation are reachable in the Sphinx site index.
+  - Borrow is setup-level access with manual return (Overdue flag); swap candidate list capped at 500; Approvals 200 per tab; old /admin/swap-approvals page coexists with /approvals; hierarchy edges are API-only; deleting a template column with values is blocked by an existing FK; Excel import does not re-baseline (by decision).
+  - TESTING.md BND-01 and SWP-11 ask the tester to record observed behavior (touching windows / self-approval by a routed lead) because the expected result was not verified in code.
+NEXT_ACTION: Build the Sphinx site, run `alembic upgrade head` and `pytest tests/ -v`, execute the TESTING.md plan, and send failures for fixing. No further phase started.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
+CURRENT_PHASE: Phase 7 follow-up -- remaining issues fixed. Runtime validation STILL required (suite not run). No new phase started.
+
+DECISION APPLIED: Excel import that updates an existing setup does NOT re-baseline (kept as-is, by your decision). Only Setup Edit re-baselines.
+
+FIXED THIS PASS:
+  1. Approvals visibility (was: everyone with swap:view saw every swap/borrow). Now `_visible()` in app/web/routers/approvals_view.py: Owner/Manager see all; others see only requests they raised, are routed to decide,
+     decided, or that involve one of their groups.
+  2. Dead swap-mapping code removed: `SwapMappingValidationError` (unused) deleted from app/core/exceptions.py.
+  3. Stale test comment about BorrowService "not existing" corrected (comment only).
+FILES_MODIFIED: app/web/routers/approvals_view.py, app/core/exceptions.py, tests/test_business_logic.py (comment), tests/test_phase6_ui.py (approvals test adjusted to the visibility rule + 1 new visibility test), IMPLEMENTATION_PROGRESS.md.
+DATABASE_CHANGES: none. API_CHANGES: none. UI_CHANGES: Approvals shows fewer items to non-involved users.
+TEST_STATUS: NOT RUN (dependencies cannot be installed here). Static checks re-run clean: compileall, 0 unresolved imports across 191 files.
+KNOWN_ISSUES (unchanged/left on purpose): swap candidate list capped at 500 and Approvals at 200 per tab; Borrow is setup-level access with manual return + Overdue flag (your decision); old /admin/swap-approvals page still exists;
+  unused legacy column `swap_requests.setup_id` kept (removing it needs a migration); deleting a template column that has values stays blocked by the pre-existing FK.
+NEXT_ACTION: Run `pip install -r requirements.txt`, `alembic upgrade head`, `pytest tests/ -v`, then the manual UI click-through; send me any failures.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
+CURRENT_PHASE: Phase 7 (validation and stabilization) -- STATIC validation complete; RUNTIME validation still required (see TEST_STATUS). Phase 8 NOT started.
+
+COMPLETED:
+  Validated by code review against your Phase 7 checklist (Product/templates, Excel import/export, Reservation, RBAC, Swap, Borrow, security):
+  - Product / templates / Excel import-export / Reservation code paths: NOT modified by Phases 4-6 except additive hooks (baseline capture on Setup/custom-value insert, Setup delete also deletes its baseline rows).
+  - RBAC matrix re-read: Bot = view only; User(Developer) = reserve + swap-request; Borrow request/approve/return/view = Lead, Manager, Owner only; Swap approve = Lead/Manager/Owner.
+  - Swap: group-access rule (both setups), hierarchy-routed approval, both-setups-have-column rule, baseline preserved, per-field ledger, reject/cancel leave state untouched, no swap-mapping code path.
+  - Borrow: lead-only request, source-lead/setup validation, Borrow-scoped routing (E->d => b,d,f,g), any-ONE approval, requester cannot self-decide, grant-based effective state, return/get-back, emails, audit + history.
+  - Static tooling run over the whole tree (191 .py files): every `app.*` import resolves to a defined name (0 unresolved); no undefined names in the files changed in Phases 4-6; model attributes/relationships used by services and templates all exist;
+    54 Jinja templates parse; no route collisions (web vs API duplicates are separated by the /api/v1 prefix); called-function signatures (notification, list, routing, pagination) match.
+  ISSUES FOUND + FIXED (genuine only):
+  1. `/setups/swap-dialog/columns` accepted any two setup ids and listed their columns even if the user had no swap access to them (information leak). Now returns an empty picker unless the user can access BOTH setups.
+  2. `SetupRepository.list` effective-group filter used `column.in_(<Query>)` (relies on implicit coercion, fragile in SQLAlchemy 1.4). Now uses an explicit id list.
+
+FILES_CREATED: none (1 regression test appended to tests/test_phase6_ui.py for issue 1).
+FILES_MODIFIED: app/web/routers/setups_view.py (issue 1), app/repositories/sqlalchemy/setup_repository.py (issue 2), tests/test_phase6_ui.py (+1 test), IMPLEMENTATION_PROGRESS.md.
+DATABASE_CHANGES: none this phase (head = 0013).  API_CHANGES: none.  UI_CHANGES: none visible (swap column picker is now empty for inaccessible partners).
+MIGRATION_STATUS: 0010-0013 have never been run against a real DB. 0013's SQL was validated in a raw-sqlite3 simulation only. ACTION REQUIRED: `alembic upgrade head` on a copy of real data, then `alembic downgrade -1` / `upgrade head` round trip.
+
+TEST_STATUS: THE EXISTING TEST SUITE WAS NOT RUN. fastapi/sqlalchemy/pytest cannot be installed in this environment (no network; `pip install -r requirements.txt` fails), so no pytest result exists for any phase 4-7 change and I am NOT claiming the suite passes.
+  Also NOT done: manual Web UI validation in a browser (no runnable app here); only template smoke-renders with fake data.
+  ACTION REQUIRED, in this order: (1) `pip install -r requirements.txt`; (2) `alembic upgrade head`; (3) `pytest tests/ -v` (new files: tests/test_phase4_completion.py, test_phase5_borrow.py, test_phase6_ui.py);
+  (4) start the app and click through: Reserve/Unreserve, Swap (pick partner -> only common columns enabled), Approvals, Borrow request/approve/return, Original vs Current dialog, Excel import/export, Product template columns.
+  Send me the failures and I will fix them in the next pass.
+
+KNOWN_ISSUES:
+  - Runtime behaviour of everything added in Phases 4-7 is unverified (see TEST_STATUS). Highest-risk: baseline `after_insert` hooks, effective-group filter, cross-product swap candidates, new Borrow/Approvals web routes.
+  - Excel import that UPDATES an existing setup changes current values without re-baselining, so those fields show as "changed from original" (Setup Edit re-baselines, import does not). Decision needed: should import also re-baseline?
+  - Approvals page lists all swaps/borrows to anyone with swap:view (incl. Bot); Borrow items only with borrow:view.
+  - Swap candidate list capped at 500 setups; Approvals shows latest 200 per tab (no pagination).
+  - Deleting a template column that already has values remains blocked by the pre-existing FK (custom values and, now, their baselines); unchanged behaviour class, not a regression.
+  - Borrow is setup-level access (no value transfer); no auto-return (Overdue flag only); unused legacy `SwapRequest.setup_id`, `SwapMappingValidationError`; old /admin/swap-approvals page still exists next to /approvals.
+
+NEXT_ACTION: Run the suite and manual UI pass listed under TEST_STATUS and send me the results/failures; answer the import re-baseline decision. Do not start another phase until then.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
 CURRENT_PHASE: Phase 6 (UI integration) -- implemented. Awaiting your approval. Phase 7 NOT started.
 
 DECISIONS APPLIED FROM YOU THIS ROUND:

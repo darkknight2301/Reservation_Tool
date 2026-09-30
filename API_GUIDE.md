@@ -44,18 +44,21 @@ Base path: `/api/v1`. Auth: Bearer JWT access token (`Authorization: Bearer <tok
 | GET | /reservations/{id} | Get reservation | Yes | reservation:view |
 | PATCH | /reservations/{id}/cancel | Cancel (unreserve) | Yes | owner (cancel_own) or reservation:cancel_any |
 | GET | /swaps | List swap requests | Yes | swap:view |
-| POST | /swaps | Request a column-value swap between two of your own reserved setups | Yes | swap:request |
+| POST | /swaps | Request a swap of one or more hardware columns between two setups the caller has group access to (no reservation needed) | Yes | swap:request |
 | GET | /swaps/{id} | Get swap request | Yes | swap:view |
-| PATCH | /swaps/{id}/approve | Approve pending swap | Yes | swap:approve |
-| PATCH | /swaps/{id}/reject | Reject pending swap | Yes | swap:approve |
+| PATCH | /swaps/{id}/approve | Approve pending swap (routed approver) | Yes | swap:approve |
+| PATCH | /swaps/{id}/reject | Reject pending swap (routed approver) | Yes | swap:approve |
 | PATCH | /swaps/{id}/cancel | Cancel own pending swap | Yes | requester only |
-| POST | /swaps/mapping | Create coordinated multi-setup swap mapping | Yes | swap:approve |
-| PATCH | /swaps/mapping/{batch_id}/approve | Approve every swap in a mapping batch | Yes | swap:approve |
-| GET | /announcements | List announcements | Yes | announcement:view |
-| POST | /announcements | Create announcement | Yes | announcement:manage |
-| GET | /announcements/{id} | Get announcement | Yes | announcement:view |
-| PATCH | /announcements/{id} | Update announcement | Yes | announcement:manage |
-| DELETE | /announcements/{id} | Delete announcement | Yes | announcement:manage |
+| GET | /borrows | List borrow requests (borrow history) | Yes | borrow:view |
+| POST | /borrows | Request a borrow from a selected source lead | Yes | borrow:request |
+| GET | /borrows/{id} | Get borrow request | Yes | borrow:view |
+| PATCH | /borrows/{id}/approve | Approve pending borrow (routed approver) | Yes | borrow:approve |
+| PATCH | /borrows/{id}/reject | Reject pending borrow (routed approver) | Yes | borrow:approve |
+| PATCH | /borrows/{id}/cancel | Cancel own pending borrow | Yes | requester only |
+| PATCH | /borrows/{id}/return | Return / get back a borrowed setup | Yes | borrow:return |
+| GET | /group-hierarchy | List approval-hierarchy edges | Yes | group:view |
+| POST | /group-hierarchy | Add an edge (`parent_group_id`, `child_group_id`, `scope` SWAP/BORROW/BOTH) | Yes | group:manage |
+| DELETE | /group-hierarchy | Remove an edge (body identifies parent, child, scope) | Yes | group:manage |
 | GET | /groups | List groups | Yes | group:view |
 | POST | /groups | Create group | Yes | group:manage |
 | GET | /groups/{id} | Get group | Yes | group:view |
@@ -113,19 +116,31 @@ Under `/products/{id}/template...`. `GET` returns `{product_id, mandatory_column
 
 `GET /setups` filters: `product_id, group_id, status, location, search` + pagination. `POST`/`PATCH /setups/{id}` (`product:manage`) set mandatory fields (ip_address, hostname, owner_id, group_id, location, remarks, status, hardware fields); status changes go through a state-machine check. Custom field values are managed separately via `/setups/{id}/custom-fields` (`GET` → `{setup_id, values}`; `PUT` body `{values: {...}}`, validated against the setup's product template — type-checked, required-field-checked, dropdown-value-checked; 422 on violation).
 
+`PATCH /setups/{id}` is an admin correction: any fixed hardware field whose value the call changes also becomes the setup's new **original (baseline)** value; untouched fields keep theirs. Swaps and borrows never modify the original.
+
 ## Reservation
 
 `POST /reservations` body: `{setup_id, reserved_from, reserved_until, remarks?, announcement_channels?, announcement_message?}` — **one setup per call**; reserving several setups means calling this once per setup (the web UI does this in a loop). `PATCH /reservations/{id}/cancel` unreserves, callable by the owning user (`reservation:cancel_own`) or anyone with `reservation:cancel_any`.
 
 ## Swap
 
-A swap exchanges the value of **one field** between two setups the requester currently has reserved -- it never relocates a reservation.
+A swap exchanges the value of one or more **hardware columns** between two setups, after approval by a routed lead. It does not involve reservations and there is no swap-mapping endpoint.
 
-`POST /swaps` body: `{reservation_id, requested_setup_id, column_name, reason?}` (`swap:request`). `reservation_id` must be the caller's own ACTIVE reservation; `requested_setup_id` must also currently be reserved by the *same* caller (self-reserved rule); `column_name` must be one of the fixed hardware fields (`ssd, hdd, hardware_info, capacity, form_factor, adapter, aardvark, quarch, apc, remote_server`) or, when the two setups belong to different products, a custom template column present on *both* products. 422/409 if any of that doesn't hold. On success, a PENDING swap is created and Leads+ are notified (`MAIL_LEADS`) that approval is needed.
+`POST /swaps` body: `{current_setup_id, requested_setup_id, column_name? | column_names?, reason?, start_time?, end_time?, announcement_channels?, announcement_message?}` (`swap:request`). The caller must have group access to **both** setups (their group, or a group holding it through an active borrow; Owner always; a setup with no group is open); the setups must differ and not be MAINTENANCE/RETIRED; every requested column must exist on both setups (fixed fields: `ssd, hdd, hardware_info, capacity, form_factor, adapter, aardvark, quarch, apc, remote_server`, plus custom columns present on both products' templates). Omit the column fields to swap every common column. `end_time` must be after `start_time`; `reason` max 500 chars. The response includes `routed_approver_emails`; those leads are emailed.
 
-`PATCH /swaps/{id}/approve` (`swap:approve`) re-verifies both setups are still self-reserved by the requester, then swaps `column_name`'s value between the two Setup rows (or, for a custom column, the two `SetupCustomFieldValue` rows) and marks the request APPROVED (its terminal, completed state). Neither reservation nor setup status changes. The pre-swap value of each setup is saved on the swap request as `previous_current_value` / `previous_requested_value` and echoed into the reservation's remarks -- visible to *every* role via `swap:view` and the Setup Table's Remarks column, so the original configuration can be found and restored (via Setup Edit) later without needing audit-log access. `PATCH /swaps/{id}/reject` (`swap:approve`) body `{reason?}`. `PATCH /swaps/{id}/cancel` — the requester withdraws their own still-pending request.
+`PATCH /swaps/{id}/approve` (`swap:approve`) — allowed only for a routed approver (Lead/Manager of the current setup's group or an ancestor group in the SWAP/BOTH hierarchy; Owner always; falls back to any holder of `swap:approve` when no approver is resolvable). It exchanges the values in one transaction, updates the **current** hardware, records one `hardware_change_logs` row per changed field per setup and audit entries, and leaves the **original/baseline** untouched. Status becomes COMPLETED. `PATCH /swaps/{id}/reject` and `/cancel` (requester, PENDING only) change no hardware. Statuses: PENDING, COMPLETED, REJECTED, CANCELLED, EXPIRED. Filters on `GET /swaps`: `status, requester_id, page, page_size`.
 
-**Separately**, `POST /swaps/mapping` (`swap:approve`) body `{mappings: [{reservation_id, target_setup_id}, ...] (min 2), reason?}` is an unrelated, coordinated *reservation-relocation* workflow: every reservation and every target setup must appear exactly once; creates one PENDING swap per mapping entry as a batch. `PATCH /swaps/mapping/{batch_id}/approve` approves every swap in that batch atomically (this path still relocates reservations as before).
+## Borrow
+
+A borrow temporarily gives the requester's group access to a setup owned by another group; the owning group and hardware values never change.
+
+`POST /borrows` body: `{source_lead_id, setup_id, hardware_field_name?, reason?, start_time?, end_time?, announcement_channels?, announcement_message?}` (`borrow:request`, roles Lead/Manager/Owner, requester must have a group). `source_lead_id` must be an active Lead/Manager whose group owns the setup; `end_time` must be in the future. Conflicts return 409 (setup already has a pending/active borrow, already borrowed, requester's own group's setup, MAINTENANCE/RETIRED).
+
+Approval routing: the source group's leads, its parent's leads and sibling groups' leads under that parent (BORROW/BOTH edges); any ONE may `PATCH /borrows/{id}/approve` or `/reject` (`borrow:approve`); the requester cannot; Owner can. Approval creates one active access grant for the borrower group (status COMPLETED). `PATCH /borrows/{id}/return` (`borrow:return`; requester, a lead of the borrowing group, a routed source approver, or Owner) closes the grant and sets RETURNED. `PATCH /borrows/{id}/cancel` is for the requester's PENDING request. Statuses: PENDING, COMPLETED, REJECTED, CANCELLED, RETURNED, EXPIRED. Filters on `GET /borrows`: `status, requester_id, setup_id, group_id, page, page_size`.
+
+## Group hierarchy (approval routing)
+
+`/group-hierarchy` manages directed edges `parent_group_id → child_group_id` with `scope` `SWAP`, `BORROW` or `BOTH`. The hierarchy only decides who may approve; it never grants access to setups.
 
 ## Announcements
 
@@ -172,8 +187,9 @@ All return a downloadable `.xlsx` `FileResponse`. Audit: EXPORT.
 
 - **Login → browse setups**: `POST /auth/login` → `GET /setups?product_id=1`
 - **Reserve**: `GET /setups?product_id=1&status=AVAILABLE` → `POST /reservations` (once per setup)
-- **Swap a column between two of your own setups**: `POST /swaps` (`reservation_id`, `requested_setup_id`, `column_name`) → `PATCH /swaps/{id}/approve`
-- **Coordinated reservation relocation (separate workflow)**: `POST /swaps/mapping` → `PATCH /swaps/mapping/{batch_id}/approve`
+- **Swap hardware between two setups of your group**: `POST /swaps` (`current_setup_id`, `requested_setup_id`, `column_names`) → `PATCH /swaps/{id}/approve`
+- **Borrow another group's setup**: `POST /borrows` (`source_lead_id`, `setup_id`) → `PATCH /borrows/{id}/approve` → `PATCH /borrows/{id}/return`
+- **Configure approval routing**: `POST /group-hierarchy` (repeat per edge)
 - **Unreserve**: `PATCH /reservations/{id}/cancel`
 - **Design a template then import**: `POST /products/{id}/template/columns` (repeat) → `POST /imports/setups/product/{id}/detect-columns` → `POST /imports/setups/product/{id}?accept_new_columns=true`
 - **Export current data**: `POST /exports/setups/product/{id}`

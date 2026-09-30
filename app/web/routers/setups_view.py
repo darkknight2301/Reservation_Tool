@@ -337,6 +337,11 @@ def swap_dialog_columns(
     """HTMX partial: the column picker for the chosen swap partner -- only columns present on both setups are selectable."""
     current_setup = setup_service.get_by_id(current_setup_id)
     other = setup_service.get_by_id(requested_setup_id) if requested_setup_id else None
+    # Security: never reveal the columns of a setup the user has no swap access to.
+    if other is not None and not (
+        swap_service.can_access_setup(current_setup, current_user) and swap_service.can_access_setup(other, current_user)
+    ):
+        other = None
     context = base_context(request, current_user)
     context.update({"column_options": _swap_column_options(current_setup, other, swap_service, template_service)})
     return templates.TemplateResponse("setups/_swap_columns.html", context)
