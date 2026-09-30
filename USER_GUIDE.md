@@ -35,11 +35,11 @@ Additional rules:
 
 ## 4. Top bar and dashboard
 
-Top-bar items (shown per permission): **Dashboard**, **Setups**, **Announcements**, **Swap Approvals**, **Approvals**, **Borrow**, a second **Approvals** (user registrations, person-check icon), **Products**, **Groups**, **Users**, **Logs**, **Developer Logs**, and a **Documentation** menu (**User Guide**, **API Guide**; available once the Sphinx site has been built).
+Top-bar items (shown per permission): **Dashboard**, **Setups**, **Announcements**, **Swap Approvals**, **Approvals**, **Borrow**, **User Approvals** (new user registrations), **Products**, **Groups**, **Users**, **Logs**, **Developer Logs**, and a **Documentation** menu (**User Guide**, **API Guide**; available once the Sphinx site has been built).
 
-> There are two items named **Approvals**. The one with the check-square icon (everyone) lists **Swap and Borrow** approvals. The one with the person-check icon (leads/managers) is the **Approval Dashboard** for new user registrations.
+> **Approvals** lists **Swap and Borrow** approvals (everyone). **User Approvals** (leads and managers) is for approving new user registrations.
 
-The **Dashboard** shows *Welcome, <name>*, cards for **Total Setups**, **Available Now**, **My Active Reservations** and **Pending Approvals** (pending user registrations, for users who can approve them), plus shortcuts **Browse Setups & Reserve** and **View Announcements**.
+The **Dashboard** shows *Welcome, <name>*, cards for **Total Setups**, **Available Now**, **My Active Reservations** and **Pending User Approvals** (pending user registrations, for users who can approve them), plus shortcuts **Browse Setups & Reserve** and **View Announcements**.
 
 ## 5. Product selection
 
@@ -69,7 +69,7 @@ Columns: Sr No, Status, IP, Hostname, User, Form Factor, Capacity, SSD, HDD, Aar
 2. Fill **From** / **Until** (until must be after from), **Reason / remarks** (stored as Remarks), and optionally **Announce this reservation via** options (§13).
 3. Submit. The setup becomes RESERVED and shows you in **User** and the window in **Reserved Time**.
 
-Errors: *"Setup is already reserved for an overlapping time window."*; *"Setup is currently maintenance/retired and cannot be reserved."*. When several setups are reserved together, each is processed separately and the result reports any that failed.
+Errors: *"Reservations must start at least N minute(s) from now."* (only if the administrator set a minimum lead time); *"Setup is already reserved for an overlapping time window."*; *"Setup is currently maintenance/retired and cannot be reserved."*. When several setups are reserved together, each is processed separately and the result reports any that failed.
 
 ## 8. Unreserve
 
@@ -80,7 +80,7 @@ Tick your reserved rows (Leads and Managers can also unreserve others') and clic
 A Swap exchanges the value of one or more hardware fields between two setups, after approval.
 
 1. Tick **exactly one** setup and click **Swap** (**Swap Column(s) Between Setups**). No reservation is needed.
-2. **Swap with**: pick another setup you have access to. Only setups that share at least one swappable column are listed.
+2. **Swap with**: pick another setup you have access to. Only setups that share at least one swappable column are listed. By default only setups of the **same product** are offered (an administrator setting can allow cross-product swaps).
 3. **Column(s) to exchange**: columns present on **both** setups are selectable; others are greyed out with "not on both setups". Select none to swap every common column. Ctrl/Cmd-click to select several.
 4. Optionally fill **Reason (optional)**, **Start time (optional)**, **End time (optional)** and the announcement options (**Announce this swap request via**). The routed approving leads are always emailed.
 5. Submit. The request is **PENDING**.
@@ -160,7 +160,7 @@ In **Currently borrowed**, click **Return / Get back** and confirm. Allowed for 
 | Message / symptom | Cause / fix |
 |---|---|
 | Invalid username or password. | Check credentials; use **Forgot password?**. |
-| Your account is pending approval… | A Lead or above must approve you in the user **Approvals** page. |
+| Your account is pending approval… | A Lead or above must approve you in **User Approvals**. |
 | Setup is already reserved for an overlapping time window. | Choose another window or setup. |
 | reserved_until must be after reserved_from. | Set **Until** later than **From**. |
 | You are not one of the routed approvers… | Only routed leads (or Owner) may decide; ask one of them. |
@@ -177,4 +177,4 @@ In **Currently borrowed**, click **Return / Get back** and confirm. Allowed for 
 - **Can the hierarchy give me access to other groups' setups?** No. It only decides who may approve.
 - **Does approving a Swap change Original hardware?** No, only Current.
 - **Why is a Borrow still active after its end time?** Return is manual; it shows **Overdue**.
-- **Can I swap between different products?** Yes, for columns present on both setups (fixed hardware fields, or custom columns with the same name).
+- **Can I swap between different products?** Not by default: swaps are limited to setups of the same product. If the administrator turns that rule off, cross-product swaps work for columns present on both setups.

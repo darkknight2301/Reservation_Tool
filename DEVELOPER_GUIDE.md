@@ -65,7 +65,7 @@ Original/Current hardware: `setup_hardware_baseline` (one row per setup, the ten
 
 ## 6. Reservation
 
-`ReservationService`: create (setup must exist and not be MAINTENANCE/RETIRED; overlap with any ACTIVE reservation raises `ReservationConflictError` — checked in the service, not via a DB constraint), cancel (owner or `reservation:cancel_any`), `sweep_expired_reservations` (ACTIVE → COMPLETED, setup → AVAILABLE). `Reservation.remarks` stores the reason; `announcement_channels` trigger `NotificationService.broadcast_reservation_event`. Statuses: ACTIVE, CANCELLED, COMPLETED. `RESERVATION_MIN_LEAD_MINUTES` is defined in settings but not currently enforced.
+`ReservationService`: create (setup must exist and not be MAINTENANCE/RETIRED; overlap with any ACTIVE reservation raises `ReservationConflictError` — checked in the service, not via a DB constraint), cancel (owner or `reservation:cancel_any`), `sweep_expired_reservations` (ACTIVE → COMPLETED, setup → AVAILABLE). `Reservation.remarks` stores the reason; `announcement_channels` trigger `NotificationService.broadcast_reservation_event`. Statuses: ACTIVE, CANCELLED, COMPLETED. `RESERVATION_MIN_LEAD_MINUTES` is enforced in `ReservationService._assert_min_lead_time`: when > 0, `reserved_from` must be at least that many minutes from now (422 `VALIDATION_ERROR`); 0 (default) disables it. It is read at call time and applies to reservations only, not Swap/Borrow times.
 
 ## 7. Swap
 
@@ -75,7 +75,7 @@ Original/Current hardware: `setup_hardware_baseline` (one row per setup, the ten
 - **Approve:** `_assert_can_approve` (routed approvers via `ApprovalRoutingService.resolve_approvers_for_group(current_setup.group_id)`; Owner override; empty routing falls back to the flat `swap:approve` permission). Missing baselines are captured first, values exchanged in one transaction, one `hardware_change_logs` row per changed field per setup, audit entries written. Original is untouched.
 - **Reject/Cancel** change nothing. Requester cancels own PENDING swaps only.
 - No swap-mapping functionality exists (removed; `SwapRequest.setup_id` is a legacy unused column).
-- `SWAP_REQUIRE_SAME_PRODUCT` exists in settings but is not enforced; cross-product swaps work for common columns.
+- `SWAP_REQUIRE_SAME_PRODUCT` (default `true`) is enforced in `SwapService.create` (422 if the setups' products differ) and in `swappable_columns`, so the Swap dialog only lists same-product partners. Set it to `false` to allow cross-product swaps for columns present on both setups.
 
 ## 8. Borrow
 
@@ -109,7 +109,7 @@ Full pages extend `base.html`; HTMX partials (`_*.html`) are swapped into target
 
 ## 14. Configuration and migrations
 
-Settings are read from environment/`.env` (`app/core/config.py`): `APP_ENV`, `SECRET_KEY`, token lifetimes, `DATABASE_URL`, log/export/Excel-log directories, `SMTP_*`, `CORS_ALLOWED_ORIGINS`, `SEED_ADMIN_*`, `ENABLE_SCHEDULER`, `RESERVATION_SWEEP_INTERVAL_MINUTES` (also used by the borrow sweep), `ANNOUNCEMENT_SWEEP_INTERVAL_MINUTES`. Never commit `.env`; set a real `SECRET_KEY`.
+Settings are read from environment/`.env` (`app/core/config.py`): `APP_ENV`, `SECRET_KEY`, token lifetimes, `DATABASE_URL`, log/export/Excel-log directories, `SMTP_*`, `CORS_ALLOWED_ORIGINS`, `SEED_ADMIN_*`, `ENABLE_SCHEDULER`, `RESERVATION_SWEEP_INTERVAL_MINUTES` (also used by the borrow sweep), `ANNOUNCEMENT_SWEEP_INTERVAL_MINUTES`, `RESERVATION_MIN_LEAD_MINUTES`, `SWAP_REQUIRE_SAME_PRODUCT`. Never commit `.env`; set a real `SECRET_KEY`.
 
 Migrations: `alembic upgrade head` (head `0013`), `alembic downgrade -1`, `alembic revision -m "…"`. Keep changes additive/backward compatible.
 
@@ -150,7 +150,6 @@ Sphinx sources are in `docs/` and include the root Markdown files (no duplicatio
 
 - Runtime behaviour of the Swap/Borrow/Approvals/baseline features has been reviewed and statically checked but must be confirmed by running the test suite and the manual plan in `TESTING.md`.
 - Borrow is setup-level access with manual return; there is no auto-return.
-- `RESERVATION_MIN_LEAD_MINUTES` and `SWAP_REQUIRE_SAME_PRODUCT` settings are not enforced.
 - Swap candidate list is capped at 500 setups; Approvals lists 200 items per tab.
 - Deleting a template column that already has values is blocked by an existing foreign key.
 - The older `/admin/swap-approvals` page coexists with `/approvals`.

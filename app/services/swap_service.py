@@ -38,6 +38,7 @@ ARCHITECTURE_ASSESSMENT.md section 3.2 and IMPLEMENTATION_PROGRESS.md:
 """
 from typing import Dict, List, Optional, Tuple
 
+from app.core.config import settings
 from app.core.constants import (
     AnnouncementChannel,
     AuditAction,
@@ -182,7 +183,12 @@ class SwapService:
             )
 
     def swappable_columns(self, setup_a, setup_b) -> List[str]:
-        """Column names that can actually be swapped between these two setups (present on both) -- used by the UI."""
+        """Column names that can actually be swapped between these two setups (present on both) -- used by the UI.
+
+        Empty when ``SWAP_REQUIRE_SAME_PRODUCT`` is on and the setups belong to different products.
+        """
+        if settings.SWAP_REQUIRE_SAME_PRODUCT and setup_a.product_id != setup_b.product_id:
+            return []
         return self._common_swappable_columns(setup_a, setup_b)
 
     def can_decide(self, swap: SwapRequest, acting_user: User) -> bool:
@@ -265,6 +271,11 @@ class SwapService:
         for setup in (current_setup, requested_setup):
             if setup.status in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED):
                 raise ConflictError("Setup {0} is currently {1} and cannot be part of a swap.".format(setup.hostname, setup.status.lower()))
+
+        if settings.SWAP_REQUIRE_SAME_PRODUCT and current_setup.product_id != requested_setup.product_id:
+            raise ValidationAppError(
+                "Swaps are only allowed between setups of the same product (SWAP_REQUIRE_SAME_PRODUCT is enabled)."
+            )
 
         # Access precondition (group/setup access -- NOT reservation state):
         # the requester must have access to BOTH setups being exchanged.

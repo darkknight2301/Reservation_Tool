@@ -1,4 +1,4 @@
-"""User Management admin screen and the Approval Dashboard."""
+"""User Management admin screen and the User Approvals screen (new-registration approvals)."""
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -186,7 +186,7 @@ def approval_dashboard_page(
     current_user: User = Depends(require_web_permission(PermissionCode.USER_APPROVE)),
     user_service: UserService = Depends(get_user_service),
 ):
-    """Render the Approval Dashboard: users awaiting approval."""
+    """Render the User Approvals screen: users awaiting approval."""
     pending_users, _ = user_service.list(UserFilter(status=UserStatus.PENDING), page=1, page_size=100)
     context = base_context(request, current_user)
     context.update({"pending_users": pending_users, "roles": RoleName.ALL})

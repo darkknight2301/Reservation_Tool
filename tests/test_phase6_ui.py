@@ -78,7 +78,10 @@ def test_lender_loses_swap_access_while_lent_and_regains_it_on_return(client, au
 # Swap dialog: only valid columns are selectable
 # ---------------------------------------------------------------------
 
-def test_swap_columns_only_selectable_when_present_on_both_setups(client, web_login, world):
+def test_swap_columns_only_selectable_when_present_on_both_setups(client, web_login, world, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SWAP_REQUIRE_SAME_PRODUCT", False)   # cross-product partner needs the rule off
     w = world
     other_product = Product(name="Other-{0}".format(id(w.db)), description="x")
     w.db.add(other_product)

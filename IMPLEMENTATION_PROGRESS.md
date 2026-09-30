@@ -1,3 +1,23 @@
+CURRENT_PHASE: Phase 8 follow-up (post-documentation fixes). No further phase started.
+
+DECISIONS APPLIED: enforce RESERVATION_MIN_LEAD_MINUTES and SWAP_REQUIRE_SAME_PRODUCT; fix the duplicate "Approvals" nav label; keep the Documentation menu as it is; ignore TESTING.md BND-01/SWP-11 wording.
+COMPLETED:
+  1. RESERVATION_MIN_LEAD_MINUTES enforced in `ReservationService._assert_min_lead_time` (called from `create`): when > 0, reserved_from must be >= now + N minutes, else 422 "Reservations must start at least N minute(s) from now."
+     Default 0 = rule off (existing behaviour unchanged). Read at call time; timezone-aware input converted to naive UTC. Applies to Reservations only (not Swap/Borrow times).
+  2. SWAP_REQUIRE_SAME_PRODUCT (default true) enforced in `SwapService.create` (422 if setups' products differ) and in `SwapService.swappable_columns` (returns [] cross-product), so the Swap dialog lists only same-product partners and the column picker
+     stays consistent. Set to false to allow cross-product swaps for columns present on both setups. NOTE: this makes same-product the default runtime behaviour (Phase 6 had allowed cross-product partners in the dialog).
+  3. Navbar: registration approvals renamed "User Approvals" (page title "User Approvals"; dashboard card "Pending User Approvals"); "Approvals" now means only Swap/Borrow approvals. Docs updated.
+  4. Docs updated (USER_GUIDE, DEVELOPER_GUIDE, API_GUIDE, TESTING: new RES-09 and SWP-12, COL-01 precondition).
+FILES_CREATED: tests/test_settings_enforcement.py (6 tests).
+FILES_MODIFIED: app/services/reservation_service.py, app/services/swap_service.py, app/web/templates/partials/navbar.html, app/web/templates/dashboard/index.html, app/web/templates/admin/approvals.html, app/web/routers/users_view.py (docstrings),
+  tests/test_phase6_ui.py (cross-product test sets SWAP_REQUIRE_SAME_PRODUCT=false), USER_GUIDE.md, DEVELOPER_GUIDE.md, API_GUIDE.md, TESTING.md, IMPLEMENTATION_PROGRESS.md.
+DATABASE_CHANGES: none. API_CHANGES: POST /reservations can now return 422 (min lead time); POST /swaps returns 422 for cross-product pairs while the rule is on.
+SPHINX_BUILD_STATUS: still NOT BUILT (sphinx/myst-parser cannot be installed here). Docs checked structurally (fences, includes, toctree).
+TEST_STATUS: NOT RUN (dependencies cannot be installed here). Static checks clean: compileall, 0 unresolved imports, all 54 templates parse, exactly one plain "Approvals" nav label.
+KNOWN_ISSUES: unchanged apart from removal of the two "unenforced settings" items (see Phase 8 entry). Explained to the user: manual Borrow return, 500-setup swap candidate cap, 200-item Approvals cap, old /admin/swap-approvals page, API-only hierarchy edges, template-column deletion block.
+NEXT_ACTION: Run `alembic upgrade head`, `pytest tests/ -v`, build Sphinx, and execute TESTING.md; send failures. No further phase started.
+
+=========================== PREVIOUS ENTRY (kept for history) ===========================
 CURRENT_PHASE: Phase 8 (documentation) -- complete. No further phase started.
 
 COMPLETED:

@@ -16,11 +16,18 @@ Swap independently re-validates its own preconditions (including that the
 requester's reservation is still ACTIVE) at approval time, so this is safe
 without Reservation needing to know Swap/Borrow exist.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
+from app.core.config import settings
 from app.core.constants import AuditAction, PermissionCode, ReservationStatus, SetupStatus
-from app.core.exceptions import AuthorizationError, ConflictError, NotFoundError, ReservationConflictError
+from app.core.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    ReservationConflictError,
+    ValidationAppError,
+)
 from app.models.reservation import Reservation
 from app.models.user import User
 from app.repositories.interfaces.i_reservation_repository import IReservationRepository
@@ -75,6 +82,7 @@ class ReservationService:
         if setup.status in (SetupStatus.MAINTENANCE, SetupStatus.RETIRED):
             raise ConflictError("Setup is currently {0} and cannot be reserved.".format(setup.status.lower()))
 
+        self._assert_min_lead_time(payload.reserved_from)
         self._assert_no_overlap(payload.setup_id, payload.reserved_from, payload.reserved_until)
 
         reservation = Reservation(
@@ -109,6 +117,24 @@ class ReservationService:
             )
 
         return created
+
+    @staticmethod
+    def _assert_min_lead_time(reserved_from: datetime) -> None:
+        """
+        Enforce ``RESERVATION_MIN_LEAD_MINUTES``: a reservation must start at
+        least that many minutes from now. 0 (the default) disables the rule.
+        Read at call time so a changed setting takes effect without code changes.
+        """
+        minimum = settings.RESERVATION_MIN_LEAD_MINUTES
+        if not minimum or minimum <= 0:
+            return
+        start = reserved_from
+        if start.tzinfo is not None:  # compare in naive UTC, the storage convention
+            start = start.astimezone(timezone.utc).replace(tzinfo=None)
+        if start < datetime.utcnow() + timedelta(minutes=minimum):
+            raise ValidationAppError(
+                "Reservations must start at least {0} minute(s) from now.".format(minimum)
+            )
 
     def _assert_no_overlap(
         self, setup_id: int, reserved_from: datetime, reserved_until: datetime, exclude_reservation_id: Optional[int] = None

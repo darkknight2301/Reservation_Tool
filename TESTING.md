@@ -39,7 +39,7 @@ Use this plan to verify the application through the browser. **Pass/Fail** boxes
 |---|---|
 | Objective | Lead approves a registration |
 | Preconditions | A Lead/Manager account; AUTH-01 done |
-| Steps | 1. Log in as the Lead. 2. Open the person-check **Approvals** page (Approval Dashboard). 3. Approve the new user. |
+| Steps | 1. Log in as the Lead. 2. Open **User Approvals**. 3. Approve the new user. |
 | Expected result | User leaves the pending list; the new user can now log in. |
 | Pass/Fail | ☐ Pass  ☐ Fail |
 
@@ -80,7 +80,7 @@ Use this plan to verify the application through the browser. **Pass/Fail** boxes
 | Objective | Top-bar items per role |
 | Preconditions | One user per role (BOT, USER, LEAD, MANAGER, OWNER) |
 | Steps | Log in as each role and read the top bar. |
-| Expected result | BOT/USER: Dashboard, Setups, Announcements, Approvals. LEAD adds Swap Approvals, Borrow, user Approvals, Groups, Developer Logs. MANAGER/OWNER add Products, Users, Logs. |
+| Expected result | BOT/USER: Dashboard, Setups, Announcements, Approvals. LEAD adds Swap Approvals, Borrow, User Approvals, Groups, Developer Logs. MANAGER/OWNER add Products, Users, Logs. |
 | Pass/Fail | ☐ Pass  ☐ Fail |
 
 **AUTH-08 — Unauthorized page**
@@ -333,6 +333,17 @@ Use this plan to verify the application through the browser. **Pass/Fail** boxes
 | Pass/Fail | ☐ Pass  ☐ Fail |
 
 
+**RES-09 — Minimum lead time**
+
+| Field | Detail |
+|---|---|
+| Objective | Minimum lead time is enforced |
+| Preconditions | `RESERVATION_MIN_LEAD_MINUTES=30` set and the server restarted; AVAILABLE setup |
+| Steps | 1. Reserve with From = 5 minutes from now. 2. Reserve with From = 45 minutes from now. |
+| Expected result | Step 1 refused: "Reservations must start at least 30 minute(s) from now."; step 2 succeeds. With the value 0 (default) both succeed. |
+| Pass/Fail | ☐ Pass  ☐ Fail |
+
+
 ### 5. Unreservation
 
 **UNR-01 — Unreserve own reservation**
@@ -489,6 +500,17 @@ Use this plan to verify the application through the browser. **Pass/Fail** boxes
 | Pass/Fail | ☐ Pass  ☐ Fail |
 
 
+**SWP-12 — Same-product rule**
+
+| Field | Detail |
+|---|---|
+| Objective | Swaps are limited to one product by default |
+| Preconditions | `SWAP_REQUIRE_SAME_PRODUCT=true` (default); setups of two different products in the user's group |
+| Steps | 1. Open the Swap dialog on a setup of product 1. 2. Look at the partner list. 3. Try the API `POST /api/v1/swaps` with the other product's setup. |
+| Expected result | Only same-product setups are listed; the API call returns 422 "Swaps are only allowed between setups of the same product…". With the setting `false`, cross-product partners appear (common columns only). |
+| Pass/Fail | ☐ Pass  ☐ Fail |
+
+
 ### 7. Required-column validation
 
 **COL-01 — Only common columns selectable**
@@ -496,7 +518,7 @@ Use this plan to verify the application through the browser. **Pass/Fail** boxes
 | Field | Detail |
 |---|---|
 | Objective | Only common columns selectable |
-| Preconditions | Setup X (product 1 with custom column C1) and setup Y (product 2 without C1), both accessible |
+| Preconditions | `SWAP_REQUIRE_SAME_PRODUCT=false`; setup X (product 1 with custom column C1) and setup Y (product 2 without C1), both accessible |
 | Steps | Open Swap for X, choose Y. |
 | Expected result | C1 is greyed out "not on both setups" and cannot be selected; fixed hardware fields remain selectable. |
 | Pass/Fail | ☐ Pass  ☐ Fail |
